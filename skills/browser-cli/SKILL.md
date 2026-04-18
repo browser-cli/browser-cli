@@ -227,15 +227,25 @@ Three layers are on the roadmap but not wired: selector self-heal surfacing into
 
 ## Environment
 
-`~/.browser-cli/.env` (gitignored) with an OpenAI-compatible gateway:
+`~/.browser-cli/.env` (gitignored). Run `browser-cli config` to set it up interactively, or hand-edit.
 
+Two main providers:
+
+**A. Claude Code subscription** (free on Max, but ~6-10s per LLM call):
 ```
-LLM_API_KEY=sk-gate-...
-LLM_BASE_URL=https://<gateway>/v1
+LLM_PROVIDER=claude-agent-sdk
+LLM_MODEL=claude-sonnet-4-5   # optional
+```
+Requires `claude` authenticated and `@anthropic-ai/claude-agent-sdk` installed.
+
+**B. OpenAI-compatible endpoint** (fast, any gateway / local model server):
+```
+LLM_API_KEY=sk-...
+LLM_BASE_URL=https://<endpoint>/v1
 LLM_MODEL=openai/<model>
 ```
 
-The config resolver prefers these three. Falls back to `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` if set.
+Fallbacks if neither is set: `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`.
 
 Override the home directory via `BROWSER_CLI_HOME=/some/path`.
 Toggle full stack traces via `BROWSER_CLI_DEBUG=1`.
@@ -249,6 +259,7 @@ Toggle full stack traces via `BROWSER_CLI_DEBUG=1`.
 | REPL step | `playwriter -s $SID --timeout 40000 -e '<js>'` |
 | List workflows | `browser-cli list` |
 | Run a workflow | `browser-cli run <domain>/<name> '<args>'` |
+| Configure LLM provider | `browser-cli config` |
 | Check relay health | `curl -s http://127.0.0.1:19988/` |
 | List tabs | `playwriter browser list` |
 | Start relay | `playwriter serve --replace` |

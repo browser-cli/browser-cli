@@ -57,7 +57,7 @@ export async function runWorkflow(name: string, rawArgs: unknown = {}): Promise<
     throw err
   }
 
-  const stagehand = new StagehandCtor(makeStagehandConfig(CACHE_DIR))
+  const stagehand = new StagehandCtor(await makeStagehandConfig(CACHE_DIR))
   await stagehand.init()
 
   const preExisting = new Map<unknown, string>()

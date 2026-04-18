@@ -30,18 +30,37 @@ npm install -g @browserclijs/browser-cli
 # or: pnpm add -g @browserclijs/browser-cli
 ```
 
-Then configure your LLM credentials in `~/.browser-cli/.env`:
+Then configure your LLM provider:
 
 ```bash
-# Option A: any OpenAI-compatible gateway
+browser-cli config
+```
+
+This is an interactive prompt that writes `~/.browser-cli/.env`. Two providers are supported.
+
+### LLM provider options
+
+| Provider            | When to pick it                                                          | Setup                                      |
+| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------ |
+| `claude-agent-sdk`  | You have an active Claude Code subscription (Max or Pro) and want to skip gateway / API billing. **Slow: 6-10s per LLM call** (each call spawns a Claude Code subprocess). Fine for sparse `selfHeal`, painful for dense `extract`. | Requires `claude` CLI authenticated and `@anthropic-ai/claude-agent-sdk` installed (`npm i -g @anthropic-ai/claude-agent-sdk`). |
+| `openai-compat`     | Any OpenAI-compatible endpoint — a gateway (aigate, openrouter), a local model server (ollama, vllm, llama.cpp), or openai.com itself. **Fast: ~500ms per call.** | Just needs `LLM_API_KEY`, `LLM_BASE_URL`, `LLM_MODEL`. |
+
+`browser-cli config` walks you through both. You can also hand-edit `~/.browser-cli/.env` directly — the resolver honors these env vars in this priority order:
+
+```bash
+# 1. Claude Code subscription (if LLM_PROVIDER is set)
+LLM_PROVIDER=claude-agent-sdk
+LLM_MODEL=claude-sonnet-4-5   # optional model hint
+
+# 2. Any OpenAI-compatible endpoint
 LLM_API_KEY=sk-...
 LLM_BASE_URL=https://your-gateway.example.com/v1
-LLM_MODEL=openai/gpt-4o
+LLM_MODEL=openai/gpt-4o-mini
 
-# Option B: direct OpenAI
+# 3. Direct OpenAI (fallback)
 OPENAI_API_KEY=sk-...
 
-# Option C: direct Anthropic
+# 4. Direct Anthropic (fallback)
 ANTHROPIC_API_KEY=sk-ant-...
 ```
 
@@ -50,6 +69,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 ```bash
 browser-cli list                       # list workflows in ~/.browser-cli/workflows/
 browser-cli run <name> '<json-args>'   # run a workflow end-to-end
+browser-cli config                     # interactively update LLM provider in .env
 browser-cli --help                     # show usage
 ```
 

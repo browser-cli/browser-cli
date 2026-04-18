@@ -2,6 +2,9 @@ export { runWorkflow } from './runner.ts'
 export type { WorkflowModule } from './runner.ts'
 export { makeStagehandConfig, makeClientId, PLAYWRITER_CDP_HOST } from './stagehand-config.ts'
 export { ensurePlaywriter } from './preflight.ts'
+export { runConfig } from './commands/config.ts'
+export { ClaudeAgentSdkLanguageModel } from './llm/claude-agent-sdk-adapter.ts'
+export type { ClaudeAgentSdkModelOptions } from './llm/claude-agent-sdk-adapter.ts'
 export {
   HOME_DIR,
   WORKFLOWS_DIR,

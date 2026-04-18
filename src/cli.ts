@@ -1,22 +1,24 @@
 import { runList } from './commands/list.ts'
 import { runRunCommand } from './commands/run.ts'
+import { runConfig } from './commands/config.ts'
 
 const USAGE = `Usage:
   browser-cli list                       List workflows in ~/.browser-cli/workflows/
   browser-cli run <name> [json-args]     Run a workflow end-to-end
+  browser-cli config [--provider <p>]    Interactively configure the LLM provider in ~/.browser-cli/.env
   browser-cli --help                     Show this message
 
 Workflow files live in ~/.browser-cli/workflows/<name>.ts and must export:
   - schema: Zod object
   - run(stagehand, args): async function returning JSON-serializable data
 
-Environment:
-  BROWSER_CLI_HOME   Override the default ~/.browser-cli location
-  LLM_API_KEY        Custom OpenAI-compatible gateway credentials
-  LLM_BASE_URL         (also requires LLM_BASE_URL and LLM_MODEL)
-  LLM_MODEL
-  OPENAI_API_KEY     Fallback if no gateway triple is set
-  ANTHROPIC_API_KEY  Fallback if no OPENAI_API_KEY is set
+Environment (resolved in priority order):
+  LLM_PROVIDER=claude-agent-sdk   Use your logged-in Claude Code subscription
+  LLM_API_KEY + LLM_BASE_URL + LLM_MODEL   Any OpenAI-compatible endpoint
+  OPENAI_API_KEY                          Fallback for direct OpenAI
+  ANTHROPIC_API_KEY                       Fallback for direct Anthropic
+  BROWSER_CLI_HOME                        Override the default ~/.browser-cli location
+  BROWSER_CLI_DEBUG=1                     Print full stack traces on error
 `
 
 async function main(): Promise<void> {
@@ -34,6 +36,9 @@ async function main(): Promise<void> {
       return
     case 'run':
       await runRunCommand(rest)
+      return
+    case 'config':
+      await runConfig(rest)
       return
     default:
       process.stderr.write(`Unknown command: ${cmd}\n\n${USAGE}`)
