@@ -1,0 +1,62 @@
+{
+  "name": "@browserclijs/browser-cli",
+  "version": "0.0.1",
+  "description": "Run browser automation workflows against your logged-in Chrome via Stagehand + Playwriter.",
+  "type": "module",
+  "bin": {
+    "browser-cli": "./dist/cli.js"
+  },
+  "main": "./dist/sdk.js",
+  "types": "./dist/sdk.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/sdk.d.ts",
+      "import": "./dist/sdk.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "files": [
+    "dist/",
+    "skills/",
+    "examples/",
+    "src/templates/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.103",
+    "@browserbasehq/stagehand": "^3.2.1",
+    "execa": "^9.5.0",
+    "tsx": "^4.19.0",
+    "zod": "^3.23.0"
+  },
+  "peerDependencies": {
+    "playwriter": "*"
+  },
+  "peerDependenciesMeta": {
+    "playwriter": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "stagehand",
+    "playwriter",
+    "cli",
+    "workflow"
+  ],
+  "license": "MIT"
+}

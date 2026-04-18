@@ -1,0 +1,17 @@
+import { z } from 'zod'
+import type { Stagehand } from '@browserbasehq/stagehand'
+
+/** Short one-line description of what this workflow does. */
+export const schema = z.object({
+  // Describe the args your workflow accepts. Example:
+  limit: z.number().int().positive().max(50).default(10),
+})
+
+export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
+  const page = await stagehand.context.newPage()
+  await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
+
+  return await page.evaluate((limit) => {
+    return { hello: 'world', limit }
+  }, args.limit)
+}
