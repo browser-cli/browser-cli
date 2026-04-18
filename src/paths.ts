@@ -47,11 +47,21 @@ export function resolveWorkflowPath(name: string): string {
 
 export function listWorkflowFiles(): string[] {
   if (!fs.existsSync(WORKFLOWS_DIR)) return []
-  return fs
-    .readdirSync(WORKFLOWS_DIR, { withFileTypes: true })
-    .filter((e) => e.isFile() && e.name.endsWith('.ts'))
-    .map((e) => e.name)
-    .sort()
+  return walkTsFiles(WORKFLOWS_DIR, '').sort()
+}
+
+function walkTsFiles(dir: string, prefix: string): string[] {
+  const out: string[] = []
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name.startsWith('.') || e.name === 'node_modules') continue
+    const rel = prefix ? `${prefix}/${e.name}` : e.name
+    if (e.isDirectory()) {
+      out.push(...walkTsFiles(path.join(dir, e.name), rel))
+    } else if (e.isFile() && e.name.endsWith('.ts')) {
+      out.push(rel)
+    }
+  }
+  return out
 }
 
 export function loadDotEnv(): void {
