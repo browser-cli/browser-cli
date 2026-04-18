@@ -33,7 +33,11 @@ function assertWorkflowModule(rawMod: Record<string, unknown>, name: string): Wo
   return mod as unknown as WorkflowModule
 }
 
-export async function runWorkflow(name: string, rawArgs: unknown = {}): Promise<unknown> {
+export async function runWorkflow(
+  name: string,
+  rawArgs: unknown = {},
+  options: { cdpUrl?: string } = {},
+): Promise<unknown> {
   loadDotEnv()
   ensureHomeDirs()
 
@@ -57,7 +61,7 @@ export async function runWorkflow(name: string, rawArgs: unknown = {}): Promise<
     throw err
   }
 
-  const stagehand = new StagehandCtor(await makeStagehandConfig(CACHE_DIR))
+  const stagehand = new StagehandCtor(await makeStagehandConfig(CACHE_DIR, { cdpUrl: options.cdpUrl }))
   await stagehand.init()
 
   const preExisting = new Map<unknown, string>()
