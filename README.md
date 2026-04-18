@@ -67,10 +67,11 @@ ANTHROPIC_API_KEY=sk-ant-...
 ## Commands
 
 ```bash
-browser-cli list                       # list workflows in ~/.browser-cli/workflows/
-browser-cli run <name> '<json-args>'   # run a workflow end-to-end
-browser-cli config                     # interactively update LLM provider in .env
-browser-cli --help                     # show usage
+browser-cli list                                     # list workflows in ~/.browser-cli/workflows/
+browser-cli run <name> '<json-args>'                 # run a workflow end-to-end
+browser-cli run <name> '<json-args>' --cdp-url <url> # run against any external Chrome (e.g. fingerprint browser)
+browser-cli config                                   # interactively update LLM provider in .env
+browser-cli --help                                   # show usage
 ```
 
 ## Your first workflow
@@ -120,6 +121,31 @@ export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
 
 A starter template lives at `src/templates/workflow.ts.tmpl` inside the installed package.
 
+## Bring your own browser (fingerprint browsers, remote Chrome)
+
+By default `browser-cli` connects to your main Chrome via Playwriter's relay. To
+run a workflow inside a different browser — a fingerprint browser profile
+(AdsPower, BitBrowser, Multilogin, Hubstudio, …), a Chrome started with
+`--remote-debugging-port=9222`, or any other CDP endpoint — pass `--cdp-url`:
+
+```bash
+# HTTP discovery URL — browser-cli resolves the websocket via /json/version
+browser-cli run hn-top '{"limit":3}' --cdp-url http://127.0.0.1:9222
+
+# Or paste the raw websocket URL directly
+browser-cli run hn-top '{"limit":3}' \
+  --cdp-url "ws://127.0.0.1:9222/devtools/browser/abc123"
+
+# Persist a default for the shell
+export BROWSER_CLI_CDP_URL=http://127.0.0.1:9222
+browser-cli run hn-top '{"limit":3}'
+```
+
+Workflow files don't change — the CDP endpoint is a runner-level concern.
+When `--cdp-url` is supplied the Playwriter preflight is skipped; instead
+browser-cli probes `/json/version` on the given host and fails fast with a
+clear error if the endpoint is unreachable.
+
 ## Using as an SDK
 
 ```ts
@@ -146,6 +172,7 @@ Then restart Claude Code. It will discover the skill and invoke `browser-cli lis
 | `~/.browser-cli/.cache/`          | Stagehand action cache (auto-generated)  |
 | `~/.browser-cli/.env`             | LLM credentials                          |
 | `$BROWSER_CLI_HOME`               | Override the default home directory      |
+| `$BROWSER_CLI_CDP_URL`            | Default CDP endpoint when `--cdp-url` not given |
 
 ## Known limitations
 

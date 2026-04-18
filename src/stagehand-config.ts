@@ -46,13 +46,37 @@ export function makeClientId(): string {
   return `bc-${process.pid}-${Date.now().toString(36)}`
 }
 
-export async function makeStagehandConfig(cacheDir: string): Promise<StagehandOptions> {
-  const clientId = makeClientId()
+export type CdpResolution = { cdpUrl: string; isCustom: boolean }
+
+const ALLOWED_CDP_SCHEMES = ['ws:', 'wss:', 'http:', 'https:']
+
+export function resolveCdpUrl(override?: string): CdpResolution {
+  const raw = (override ?? process.env.BROWSER_CLI_CDP_URL)?.trim()
+  if (raw) {
+    let parsed: URL
+    try {
+      parsed = new URL(raw)
+    } catch {
+      throw new Error(`Invalid --cdp-url: "${raw}" is not a valid URL.`)
+    }
+    if (!ALLOWED_CDP_SCHEMES.includes(parsed.protocol)) {
+      throw new Error(
+        `Invalid --cdp-url scheme "${parsed.protocol}". Use ws://, wss://, http://, or https://.`,
+      )
+    }
+    return { cdpUrl: raw, isCustom: true }
+  }
+  return { cdpUrl: `ws://${PLAYWRITER_CDP_HOST}/cdp/${makeClientId()}`, isCustom: false }
+}
+
+export async function makeStagehandConfig(
+  cacheDir: string,
+  options: { cdpUrl?: string } = {},
+): Promise<StagehandOptions> {
+  const { cdpUrl } = resolveCdpUrl(options.cdpUrl)
   return {
     env: 'LOCAL',
-    localBrowserLaunchOptions: {
-      cdpUrl: `ws://${PLAYWRITER_CDP_HOST}/cdp/${clientId}`,
-    },
+    localBrowserLaunchOptions: { cdpUrl },
     selfHeal: true,
     cacheDir,
     disablePino: true,
