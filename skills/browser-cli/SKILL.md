@@ -66,22 +66,40 @@ browser-cli run news~ycombinator~com/top '{"limit":5}' | jq '.[].title'
 
 ## Script shape
 
-Every workflow exports a zod `schema` and an async `run`.
+Every workflow exports a zod `schema` and an async `run`. Two extraction shapes
+are supported; **prefer the API-first shape** when the page renders from JSON
+(most modern SPAs do — see "Decision: API-first vs DOM" below).
 
 ```ts
 import { z } from 'zod'
 import type { Stagehand } from '@browserbasehq/stagehand'
+import { waitForJsonResponse, pageFetch } from '@browserclijs/browser-cli'
 
 /** One-line description — shown by `browser-cli list`. */
 export const schema = z.object({ /* inputs */ })
 
 export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
   const page = await stagehand.context.newPage()
-  await page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
-  // ... do work, return a JSON-serializable value ...
-  return [{ title: '...', score: 99, url: '...' }]
+
+  // -- API-first (preferred): capture the JSON the page itself fetches --
+  const { json } = await waitForJsonResponse(page, /\/api\/things/)
+  await page.goto('https://example.com/things', { waitUntil: 'domcontentloaded' })
+  return (json as { items: unknown[] }).items
+
+  // -- Active fetch: hit the API directly, reusing the page's session/cookies --
+  // await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
+  // return await pageFetch(page, 'https://example.com/api/things')
+
+  // -- DOM scrape (fallback): only when no JSON backs the page --
+  // await page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
+  // return await page.evaluate(() => Array.from(document.querySelectorAll('…')).map(…))
 }
 ```
+
+The three helpers are exported from `@browserclijs/browser-cli`:
+- `waitForJsonResponse(page, match, opts?)` — install BEFORE `page.goto`; resolves to the first matching JSON response.
+- `captureResponses(page, match, opts?)` — install BEFORE `page.goto`; returns `{ list(), clear() }` for bulk inspection (e.g. while scrolling).
+- `pageFetch<T>(page, url, init?)` — fire a request from the page's JS context (inherits cookies / same-origin auth).
 
 The runner handles:
 - Loading `~/.browser-cli/.env` via `process.loadEnvFile`
@@ -94,6 +112,8 @@ The runner handles:
 ## Creating a new workflow — step-by-step flow (PREFERRED)
 
 **Use whenever:** the target site is unfamiliar, selectors/scroll behavior need verification, or you're unsure whether the page virtualizes content. Don't write 100 lines on the first guess — always has 2–3 runtime bugs that cost minutes each to diagnose.
+
+**API-first principle:** before scraping any DOM, check whether the page is just rendering a JSON response. Most modern SPAs (X, Reddit, GitHub, Linear, Notion, …) are. APIs change far less than markup, return the full result without virtualization, and skip scroll/wait-for-render. **Always do step 3 (network capture) before step 4 (DOM probe).** Skip step 4 entirely when step 3 finds the data.
 
 ### 1. Open a playwriter session (persistent REPL)
 
@@ -119,7 +139,51 @@ playwriter -s $SID --timeout 40000 -e '
 
 Verify: title is what you expect, you're in the logged-in view (not a login wall).
 
-### 3. Probe the DOM shape
+### 3. Capture network responses (DO THIS BEFORE DOM PROBING)
+
+Install a JSON response listener **before** the navigation in step 2 — for new sessions reorder the steps so the listener attaches first. For existing sessions, navigate again with the listener already in place.
+
+```bash
+playwriter -s $SID --timeout 40000 -e '
+  state.responses = []
+  state.p.on("response", async (r) => {
+    const ct = r.headers()["content-type"] || ""
+    if (!ct.includes("json")) return
+    try { state.responses.push({ url: r.url(), status: r.status(), method: r.request().method(), json: await r.json() }) } catch (e) {}
+  })
+  await state.p.goto("https://<target>", { waitUntil: "domcontentloaded" })
+  await state.p.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {})
+  console.log(JSON.stringify(state.responses.map(r => ({ url: r.url, status: r.status, method: r.method, keys: r.json && typeof r.json === "object" ? Object.keys(r.json).slice(0, 8) : null })), null, 2))
+'
+```
+
+Read the list. Look for:
+- A response whose URL contains a stable path like `/api/`, `/graphql`, `/v1/`, `/_next/data/`, `/internal/`
+- A `keys` array that obviously contains the data the user asked for (e.g. `["items"]`, `["data", "user"]`, `["edges"]`)
+
+If you see a candidate, pull its body to confirm shape:
+
+```bash
+playwriter -s $SID -e '
+  const r = state.responses.find(x => x.url.includes("/api/stories"))
+  console.log(JSON.stringify(r.json, null, 2).slice(0, 2000))
+'
+```
+
+If the data is there, **stop probing the DOM** and skip to step 5. Use `waitForJsonResponse` (passive — waits for the page to fire it) or `pageFetch` (active — fires it yourself, faster but may need extra headers) when you commit the workflow.
+
+If the page renders server-side (no useful JSON in the responses), or the only matching responses are HTML/CSS/JS, **then** continue to step 4.
+
+#### Decision: API-first vs DOM
+
+| Question | If yes → | If no → |
+|---|---|---|
+| Is the data inside one of the captured JSON responses? | API-first (step 5 with `waitForJsonResponse`) | DOM (step 4) |
+| Does the request fire on every navigation, predictably? | `waitForJsonResponse` — passive, mirrors a real visit | `pageFetch` — active, fire it directly after `goto` |
+| Does the API need auth headers the page sets dynamically? | `pageFetch` (cookies + same-origin auth come from the page) | Either |
+| Does the page virtualize a long list? | API-first — the response usually returns the full page | DOM with dedup-while-scrolling (step 4) |
+
+### 4. Probe the DOM shape
 
 Query the smallest possible surface first. Use `JSON.stringify` so the output is parseable and compact.
 
@@ -139,7 +203,7 @@ playwriter -s $SID --timeout 40000 -e '
 
 One sample tells you whether the selectors resolve. If `hasText: false`, the test-id changed — investigate before scaling.
 
-### 4. Characterize scroll / pagination
+### 5. Characterize scroll / pagination
 
 Many modern sites (Twitter/X, Instagram, some SPAs) **virtualize lists** — off-screen items are removed from the DOM. A single "scrape after scroll" pattern will silently drop data. Always measure:
 
@@ -162,11 +226,11 @@ Interpret:
 - Plateau / drop → **virtualization**; you must dedup-while-scrolling (use a stable key like tweet URL, item href, `data-id`)
 - `atBottom: true` AND no new items over N consecutive scrolls → done
 
-### 5. Commit to a workflow
+### 6. Commit to a workflow
 
 Drop the verified logic into `~/.browser-cli/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
 
-### 6. Run via `browser-cli` and verify
+### 7. Run via `browser-cli` and verify
 
 ```bash
 browser-cli run <domain>/<name> '<args>'
@@ -176,9 +240,14 @@ If it fails when the REPL succeeded, see **Known gotchas** below.
 
 ## Creating a new workflow — quick-start flow
 
-Skip the REPL only when the page is well-known (stable markup, no login, no virtualization, no async renders worth waiting for). Examples: static HTML pages, Hacker News frontpage, a known API response.
+Skip the REPL only when you already know the answer to the API-vs-DOM question:
 
-Start from an existing workflow (`examples/hn-top.ts` in the installed package is a small template), edit, run with `browser-cli run`, iterate.
+- You know a public/internal JSON endpoint and its shape (use `pageFetch` directly — see `examples/github-repo-summary.ts`)
+- The page is static HTML with stable markup and no login/virtualization (use `page.evaluate` directly — see `examples/hn-top.ts`)
+
+Even here, spend ~30s opening DevTools Network to confirm the API exists and returns what you expect — assumptions about response shape are the #1 source of "worked locally, broke on first run" bugs.
+
+Start from an existing workflow (`examples/github-repo-summary.ts` for API-first, `examples/hn-top.ts` for DOM), edit, run with `browser-cli run`, iterate.
 
 ## Known gotchas
 
@@ -224,6 +293,8 @@ Current MVP prints pretty JSON only. Multiple output formats (`table`/`csv`/`md`
 
 ### LLM-driven fallback (roadmap, not yet implemented)
 Three layers are on the roadmap but not wired: selector self-heal surfacing into the runner's error channel, request-schema drift detection, and full workflow rewrite with auto-versioning. The underlying Stagehand `selfHeal` already runs inside `act()`.
+
+The new network helpers (`captureResponses` / `waitForJsonResponse` / `pageFetch`) are the foundation for L2 (request-schema drift): once a workflow extracts from a typed JSON shape, "the API moved a field" is a clean signal the runner can detect (zod parse failure on the response) and feed back to the LLM for re-mapping. The DOM-extraction path can't give us this without a brittle "did the page render fewer items than usual?" heuristic.
 
 ## Environment
 

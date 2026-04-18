@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import type { Stagehand } from '@browserbasehq/stagehand'
+// API-first helpers — see SKILL.md "Step 2.5: Capture network traffic" before scraping the DOM.
+// import { waitForJsonResponse, captureResponses, pageFetch } from '@browserclijs/browser-cli'
 
 /** Short one-line description of what this workflow does. */
 export const schema = z.object({
@@ -9,8 +11,14 @@ export const schema = z.object({
 
 export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
   const page = await stagehand.context.newPage()
-  await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
 
+  // -- Preferred: extract from the underlying JSON response --
+  // const { json } = await waitForJsonResponse(page, /\/api\/some-endpoint/)
+  // await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
+  // return (json as { items: { title: string }[] }).items.slice(0, args.limit)
+
+  // -- Fallback: scrape the DOM (markup is more brittle than the API) --
+  await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
   return await page.evaluate((limit) => {
     return { hello: 'world', limit }
   }, args.limit)

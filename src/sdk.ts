@@ -15,3 +15,5 @@ export {
   resolveWorkflowPath,
   loadDotEnv,
 } from './paths.ts'
+export { captureResponses, waitForJsonResponse, pageFetch } from './helpers/network.ts'
+export type { CapturedResponse, Matcher, StagehandPage } from './helpers/network.ts'
