@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { WORKFLOWS_DIR, listWorkflowFiles } from '../paths.ts'
+import { extractDescription } from '../workflow-meta.ts'
 
 export async function runList(): Promise<void> {
   const files = listWorkflowFiles()
@@ -44,20 +45,3 @@ export async function runList(): Promise<void> {
   }
 }
 
-function extractDescription(absPath: string): string {
-  try {
-    const head = fs.readFileSync(absPath, 'utf8').slice(0, 2048)
-    const jsdoc = head.match(/\/\*\*\s*([\s\S]*?)\*\//)
-    if (jsdoc) {
-      const firstLine = jsdoc[1]!
-        .split('\n')
-        .map((l) => l.replace(/^\s*\*\s?/, '').trim())
-        .find((l) => l.length > 0)
-      if (firstLine) return firstLine
-    }
-    const lineComment = head.match(/^\s*\/\/\s*(.+)$/m)
-    if (lineComment) return lineComment[1]!.trim()
-  } catch {
-  }
-  return ''
-}

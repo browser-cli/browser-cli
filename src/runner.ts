@@ -33,11 +33,7 @@ function assertWorkflowModule(rawMod: Record<string, unknown>, name: string): Wo
   return mod as unknown as WorkflowModule
 }
 
-export async function runWorkflow(
-  name: string,
-  rawArgs: unknown = {},
-  options: { cdpUrl?: string } = {},
-): Promise<unknown> {
+export async function loadWorkflow(name: string): Promise<{ mod: WorkflowModule; path: string }> {
   loadDotEnv()
   ensureHomeDirs()
 
@@ -47,6 +43,15 @@ export async function runWorkflow(
   }
 
   const mod = assertWorkflowModule(await loadTs(workflowPath), name)
+  return { mod, path: workflowPath }
+}
+
+export async function runWorkflow(
+  name: string,
+  rawArgs: unknown = {},
+  options: { cdpUrl?: string; preloaded?: WorkflowModule } = {},
+): Promise<unknown> {
+  const mod = options.preloaded ?? (await loadWorkflow(name)).mod
 
   let parsed: unknown
   try {

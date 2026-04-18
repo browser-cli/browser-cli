@@ -1,12 +1,20 @@
 import { runList } from './commands/list.ts'
 import { runRunCommand } from './commands/run.ts'
 import { runConfig } from './commands/config.ts'
+import { runDescribe } from './commands/describe.ts'
 
 const USAGE = `Usage:
   browser-cli list                                      List workflows in ~/.browser-cli/workflows/
-  browser-cli run <name> [json-args] [--cdp-url <url>]  Run a workflow end-to-end
+  browser-cli describe <name>                           Show a workflow's parameters and usage examples
+  browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end
   browser-cli config [--provider <p>]                   Interactively configure the LLM provider in ~/.browser-cli/.env
   browser-cli --help                                    Show this message
+
+Args for \`run\` accept three forms (auto-detected):
+  - Positional in schema order:   browser-cli run x~com/profile-tweets ClaudeDevs 20
+  - Named flags:                  browser-cli run x~com/profile-tweets --username ClaudeDevs --limit 20
+  - JSON object (back-compat):    browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs","limit":20}'
+Use \`browser-cli run <name> --help\` to print parameters without executing.
 
 Workflow files live in ~/.browser-cli/workflows/<name>.ts and must export:
   - schema: Zod object
@@ -41,6 +49,10 @@ async function main(): Promise<void> {
       return
     case 'run':
       await runRunCommand(rest)
+      return
+    case 'describe':
+    case 'show':
+      await runDescribe(rest)
       return
     case 'config':
       await runConfig(rest)

@@ -1,12 +1,16 @@
 import { ensureCustomCdpReachable, ensurePlaywriter } from '../preflight.ts'
-import { runWorkflow } from '../runner.ts'
+import { loadWorkflow, runWorkflow } from '../runner.ts'
 import { resolveCdpUrl } from '../stagehand-config.ts'
+import { extractParamSpec } from '../param-spec.ts'
+import { parseRunArgs, coerceToObject } from '../arg-coerce.ts'
+import { renderDescribe } from './describe.ts'
 
-type ParsedRunArgv = { name?: string; argsJson?: string; cdpUrl?: string }
+type ParsedRunArgv = { name?: string; rest: string[]; cdpUrl?: string; help: boolean }
 
 function parseRunArgv(argv: string[]): ParsedRunArgv {
-  const positional: string[] = []
+  const rest: string[] = []
   let cdpUrl: string | undefined
+  let help = false
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!
     if (a === '--cdp-url') {
@@ -26,29 +30,46 @@ function parseRunArgv(argv: string[]): ParsedRunArgv {
         process.exit(2)
       }
       cdpUrl = val
+    } else if (a === '-h' || a === '--help') {
+      help = true
     } else {
-      positional.push(a)
+      rest.push(a)
     }
   }
-  return { name: positional[0], argsJson: positional[1], cdpUrl }
+  return { name: rest[0], rest: rest.slice(1), cdpUrl, help }
 }
 
 export async function runRunCommand(argv: string[]): Promise<void> {
-  const { name, argsJson, cdpUrl } = parseRunArgv(argv)
+  const { name, rest, cdpUrl, help } = parseRunArgv(argv)
 
   if (!name) {
-    process.stderr.write('Usage: browser-cli run <name> [json-args] [--cdp-url <url>]\n')
+    process.stderr.write('Usage: browser-cli run <name> [args] [--cdp-url <url>]\n')
     process.exit(2)
   }
 
-  let parsedArgs: unknown = {}
-  if (argsJson !== undefined && argsJson !== '') {
-    try {
-      parsedArgs = JSON.parse(argsJson)
-    } catch (err) {
-      process.stderr.write(`Invalid JSON for args: ${(err as Error).message}\n`)
-      process.exit(2)
+  const { mod } = await loadWorkflow(name)
+
+  if (help) {
+    const out = await renderDescribe(name)
+    process.stdout.write(out + '\n')
+    return
+  }
+
+  const spec = extractParamSpec(mod.schema)
+
+  let parsedArgs: unknown
+  try {
+    const input = parseRunArgs(rest)
+    if (input.kind === 'empty') {
+      parsedArgs = {}
+    } else if (input.kind === 'json') {
+      parsedArgs = input.value
+    } else {
+      parsedArgs = coerceToObject(input, spec)
     }
+  } catch (err) {
+    process.stderr.write(`${(err as Error).message}\n`)
+    process.exit(2)
   }
 
   const { cdpUrl: resolvedUrl, isCustom } = resolveCdpUrl(cdpUrl)
@@ -58,6 +79,6 @@ export async function runRunCommand(argv: string[]): Promise<void> {
     await ensurePlaywriter()
   }
 
-  const result = await runWorkflow(name, parsedArgs, { cdpUrl })
+  const result = await runWorkflow(name, parsedArgs, { cdpUrl, preloaded: mod })
   process.stdout.write(JSON.stringify(result, null, 2) + '\n')
 }
