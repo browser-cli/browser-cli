@@ -1,0 +1,104 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag is on main
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          if ! git merge-base --is-ancestor "$TAG" origin/main; then
+            echo "Tag $TAG is not on origin/main. Aborting." >&2
+            exit 1
+          fi
+
+      - name: Parse tag, validate SemVer, pick npm dist-tag
+        id: meta
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
+          if [[ ! "$VERSION" =~ $SEMVER_RE ]]; then
+            echo "Tag $TAG is not a valid SemVer. Aborting." >&2
+            exit 1
+          fi
+
+          if [[ "$VERSION" == *-* ]]; then
+            PRE="${VERSION#*-}"
+            PRE="${PRE%%+*}"
+            ID="${PRE%%.*}"
+            ID="$(echo "$ID" | tr '[:upper:]' '[:lower:]')"
+            case "$ID" in
+              alpha) NPM_TAG=alpha ;;
+              beta)  NPM_TAG=beta ;;
+              rc)    NPM_TAG=rc ;;
+              next)  NPM_TAG=next ;;
+              canary) NPM_TAG=canary ;;
+              *)     NPM_TAG=next ;;
+            esac
+          else
+            NPM_TAG=latest
+          fi
+
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG"   >> "$GITHUB_OUTPUT"
+
+      - name: Verify package.json version matches tag
+        run: |
+          set -euo pipefail
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "${{ steps.meta.outputs.version }}" ]; then
+            echo "package.json version ($PKG_VERSION) does not match tag (${{ steps.meta.outputs.version }})." >&2
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+        run: |
+          set -euo pipefail
+          echo "Publishing ${{ steps.meta.outputs.version }} with dist-tag '${{ steps.meta.outputs.npm_tag }}'"
+          pnpm publish \
+            --access public \
+            --no-git-checks \
+            --tag "${{ steps.meta.outputs.npm_tag }}"
