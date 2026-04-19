@@ -29,7 +29,10 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "tsx --test test/**/*.test.ts",
+    "postinstall": "node dist/postinstall.js 2>/dev/null || true",
+    "link": "npm run build && pnpm link --global && mkdir -p \"$HOME/.claude/skills\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.claude/skills/browser-cli\" && echo \"linked browser-cli bin + skill → $PWD\"",
+    "unlink": "pnpm unlink --global 2>/dev/null; rm -f \"$HOME/.claude/skills/browser-cli\"; echo \"unlinked browser-cli bin + skill\""
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.103",

@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import crypto from 'node:crypto'
 import { Cron } from 'croner'
-import { listTaskFiles, resolveTaskPath, TASKS_DIR } from '../paths.ts'
+import { listTaskFiles, parseNamespaced, resolveSubTaskPath, resolveTaskPath, TASKS_DIR } from '../paths.ts'
 import { loadTs } from '../ts-loader.ts'
 import type { LoadedTask, TaskConfig } from './types.ts'
 
@@ -71,7 +71,8 @@ export function hashConfig(config: TaskConfig): string {
 }
 
 export async function loadTask(name: string): Promise<LoadedTask> {
-  const p = resolveTaskPath(name)
+  const { sub, rest } = parseNamespaced(name)
+  const p = sub ? resolveSubTaskPath(sub, rest) : resolveTaskPath(name)
   if (!fs.existsSync(p)) {
     throw new Error(`Task not found: ${p}\nRun \`browser-cli task list\` to see available tasks in ${TASKS_DIR}`)
   }

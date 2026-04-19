@@ -3,7 +3,17 @@ import path from 'node:path'
 import readline from 'node:readline/promises'
 import { stdin, stdout } from 'node:process'
 import { Cron } from 'croner'
-import { resolveTaskPath, TASKS_DIR, listWorkflowFiles, WORKFLOWS_DIR, ensureHomeDirs } from '../paths.ts'
+import {
+  resolveTaskPath,
+  TASKS_DIR,
+  listWorkflowFiles,
+  WORKFLOWS_DIR,
+  ensureHomeDirs,
+  listSubTaskFiles,
+  parseNamespaced,
+} from '../paths.ts'
+import { readRegistry } from '../subs/registry.ts'
+import { promptAndCommit } from '../git/userRepo.ts'
 import { loadTask } from '../task/loader.ts'
 import { executeTask } from '../daemon/executor.ts'
 import {
@@ -70,25 +80,51 @@ async function cmdList(): Promise<void> {
   for (const err of errors) {
     process.stderr.write(`task ${err.name}: load error — ${err.error}\n`)
   }
-  if (rows.length === 0 && errors.length === 0) {
+
+  const { subs } = readRegistry()
+  const hasSubTasks = subs.some((s) => listSubTaskFiles(s.name).length > 0)
+
+  if (rows.length === 0 && errors.length === 0 && !hasSubTasks) {
     process.stderr.write(
       `no tasks in ${TASKS_DIR}\ncreate one with: browser-cli task create <name>\n`,
     )
     return
   }
-  const nameCol = Math.max(4, ...rows.map((r) => r.name.length))
-  process.stdout.write(
-    `${'NAME'.padEnd(nameCol)}  STATUS    LAST RUN             NEXT RUN\n`,
-  )
-  process.stdout.write('-'.repeat(nameCol + 55) + '\n')
-  for (const r of rows) {
-    const status = r.enabled ? 'enabled' : 'disabled'
-    const last = r.lastRunAt ? new Date(r.lastRunAt).toISOString().slice(0, 19).replace('T', ' ') : '—'
-    const next = r.nextRunAt ? new Date(r.nextRunAt).toISOString().slice(0, 19).replace('T', ' ') : '—'
+
+  if (rows.length > 0) {
+    process.stdout.write('── your tasks ──\n')
+    const nameCol = Math.max(4, ...rows.map((r) => r.name.length))
     process.stdout.write(
-      `${r.name.padEnd(nameCol)}  ${status.padEnd(8)}  ${last.padEnd(19)}  ${next}\n`,
+      `${'NAME'.padEnd(nameCol)}  STATUS    LAST RUN             NEXT RUN\n`,
     )
+    process.stdout.write('-'.repeat(nameCol + 55) + '\n')
+    for (const r of rows) {
+      const status = r.enabled ? 'enabled' : 'disabled'
+      const last = r.lastRunAt ? new Date(r.lastRunAt).toISOString().slice(0, 19).replace('T', ' ') : '—'
+      const next = r.nextRunAt ? new Date(r.nextRunAt).toISOString().slice(0, 19).replace('T', ' ') : '—'
+      process.stdout.write(
+        `${r.name.padEnd(nameCol)}  ${status.padEnd(8)}  ${last.padEnd(19)}  ${next}\n`,
+      )
+    }
   }
+
+  for (const s of subs) {
+    const files = listSubTaskFiles(s.name).map((f) => f.replace(/\.ts$/, ''))
+    if (files.length === 0) continue
+    process.stdout.write(`\n── ${s.name} (subscribed, read-only) ──\n`)
+    const nameCol = Math.max(4, ...files.map((f) => f.length))
+    process.stdout.write(
+      `${'NAME'.padEnd(nameCol)}  STATUS      HINT\n`,
+    )
+    process.stdout.write('-'.repeat(nameCol + 50) + '\n')
+    for (const name of files) {
+      const qual = `${s.name}/${name}`
+      process.stdout.write(
+        `${name.padEnd(nameCol)}  available   sub copy ${qual}\n`,
+      )
+    }
+  }
+
   if (synced.length === 0 && rows.length > 0) {
     process.stderr.write(
       '\nnote: the on-disk tasks dir is empty; showing historical rows from sqlite.\n',
@@ -165,6 +201,15 @@ async function cmdShow(args: string[]): Promise<void> {
   }
 }
 
+function rejectSubRef(name: string, _op: string): void {
+  const { sub, rest } = parseNamespaced(name)
+  if (!sub) return
+  process.stderr.write(
+    `subscribed tasks are read-only — run 'browser-cli sub copy ${sub}/${rest}' to fork into your own tasks first\n`,
+  )
+  process.exit(1)
+}
+
 async function cmdRun(args: string[]): Promise<void> {
   let cdpUrl: string | undefined
   const rest: string[] = []
@@ -184,6 +229,7 @@ async function cmdRun(args: string[]): Promise<void> {
     process.exit(2)
   }
   ensureHomeDirs()
+  rejectSubRef(name, 'run')
   const task = await loadTask(name)
 
   const { cdpUrl: resolved, isCustom } = resolveCdpUrl(cdpUrl)
@@ -211,6 +257,7 @@ async function cmdEnable(args: string[], enabled: boolean): Promise<void> {
     process.stderr.write(`Usage: browser-cli task ${enabled ? 'enable' : 'disable'} <name>\n`)
     process.exit(2)
   }
+  rejectSubRef(name, enabled ? 'enable' : 'disable')
   // Make sure task exists on disk and registry is in sync.
   ensureHomeDirs()
   await loadTask(name)
@@ -229,18 +276,22 @@ async function cmdRemove(args: string[]): Promise<void> {
     process.stderr.write('Usage: browser-cli task rm <name>\n')
     process.exit(2)
   }
+  rejectSubRef(name, 'rm')
   ensureHomeDirs()
   const p = resolveTaskPath(name)
+  let fileRemoved = false
   if (fs.existsSync(p)) {
     fs.unlinkSync(p)
+    fileRemoved = true
     process.stdout.write(`deleted ${p}\n`)
   }
   const removed = removeTaskRow(name)
   if (removed) process.stdout.write(`removed db row for "${name}"\n`)
-  if (!fs.existsSync(p) && !removed) {
+  if (!fileRemoved && !removed) {
     process.stderr.write(`task "${name}" not found\n`)
     process.exit(1)
   }
+  if (fileRemoved) await promptAndCommit(`task rm ${name}`)
 }
 
 async function cmdCreate(args: string[]): Promise<void> {
@@ -251,6 +302,13 @@ async function cmdCreate(args: string[]): Promise<void> {
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_/\-.~]{0,99}$/.test(name)) {
     process.stderr.write('name must be 1-100 chars, alphanumeric plus _/-.~\n')
+    process.exit(2)
+  }
+  const ns = parseNamespaced(name)
+  if (ns.sub) {
+    process.stderr.write(
+      `"${name}" starts with a registered sub prefix "${ns.sub}/" — pick a different local name to avoid shadowing the subscription\n`,
+    )
     process.exit(2)
   }
   ensureHomeDirs()
@@ -352,6 +410,7 @@ async function cmdCreate(args: string[]): Promise<void> {
   } finally {
     rl.close()
   }
+  await promptAndCommit(`task create ${name}`)
 }
 
 function parseChannelPicker(raw: string, valid: string[]): string[] {

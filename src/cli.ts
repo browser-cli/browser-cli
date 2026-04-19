@@ -5,16 +5,22 @@ import { runDescribe } from './commands/describe.ts'
 import { runNotify } from './commands/notify.ts'
 import { runTask } from './commands/task.ts'
 import { runDaemon } from './commands/daemon.ts'
+import { runInit } from './commands/init.ts'
+import { runSync } from './commands/sync.ts'
+import { runSub } from './commands/sub.ts'
 
 const USAGE = `Usage:
-  browser-cli list                                      List workflows in ~/.browser-cli/workflows/
+  browser-cli list                                      List workflows (yours + subscribed)
   browser-cli describe <name>                           Show a workflow's parameters and usage examples
-  browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end
+  browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end (namespaced as <sub>/<workflow> for subs)
   browser-cli config [--provider <p>]                   Interactively configure the LLM provider in ~/.browser-cli/.env
   browser-cli notify <subcommand>                       Manage notification channels (add/list/test/rm)
   browser-cli task <subcommand>                         Manage tasks (list/create/show/run/enable/disable/rm)
   browser-cli daemon [--detach|-d]                      Start the scheduler (foreground or detached)
   browser-cli daemon status|stop                        Inspect/stop a detached daemon
+  browser-cli init                                      Re-sync ~/.browser-cli layout + git repo, print status
+  browser-cli sync                                      Review uncommitted changes in ~/.browser-cli and commit
+  browser-cli sub <subcommand>                          Manage subscribed repos (add/list/update/remove/copy)
   browser-cli --help                                    Show this message
 
 Args for \`run\` accept three forms (auto-detected):
@@ -72,6 +78,15 @@ async function main(): Promise<void> {
       return
     case 'daemon':
       await runDaemon(rest)
+      return
+    case 'init':
+      await runInit(rest)
+      return
+    case 'sync':
+      await runSync(rest)
+      return
+    case 'sub':
+      await runSub(rest)
       return
     default:
       process.stderr.write(`Unknown command: ${cmd}\n\n${USAGE}`)
