@@ -18,7 +18,8 @@ Mode is inferred from the presence of `itemKey` — set it for items mode; leave
 ### Step 1: ensure the workflow exists
 
 ```bash
-browser-cli list
+browser-cli list <site>          # scope by site when you know it (substring, '.' ↔ '~')
+browser-cli list                 # or no filter to see everything
 ```
 
 Ask the user which workflow this task wraps. If the one they want **doesn't exist** (or they've described a scraping goal with no existing workflow), STOP and load `./workflow-create.md`. Return here after the workflow is created and tested with `browser-cli run <name>`.

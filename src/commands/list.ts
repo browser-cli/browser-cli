@@ -8,16 +8,28 @@ import {
 } from '../paths.ts'
 import { readRegistry } from '../subs/registry.ts'
 import { extractDescription } from '../workflow-meta.ts'
+import { matchesSite, parseSiteArg } from './parse-site-arg.ts'
 
 type Row = { name: string; description: string; mtime: string }
 
-export async function runList(): Promise<void> {
-  const userFiles = listWorkflowFiles()
-  const { subs } = readRegistry()
+export async function runList(argv: string[] = []): Promise<void> {
+  const { site } = parseSiteArg(argv)
 
-  const hasAny = userFiles.length > 0 || subs.some((s) => listSubWorkflowFiles(s.name).length > 0)
+  const userFiles = listWorkflowFiles().filter((f) => matchesSite(f, site))
+  const { subs } = readRegistry()
+  const subFiles = new Map<string, string[]>()
+  for (const s of subs) {
+    const files = listSubWorkflowFiles(s.name).filter((f) => matchesSite(f, site))
+    if (files.length > 0) subFiles.set(s.name, files)
+  }
+
+  const hasAny = userFiles.length > 0 || subFiles.size > 0
 
   if (!hasAny) {
+    if (site) {
+      process.stderr.write(`no workflows match "${site}"\n`)
+      return
+    }
     process.stderr.write(
       [
         '',
@@ -35,12 +47,14 @@ export async function runList(): Promise<void> {
     return
   }
 
-  const userRows = toRows(userFiles, WORKFLOWS_DIR)
-  printSection('── your workflows ──', userRows)
+  if (userFiles.length > 0) {
+    const userRows = toRows(userFiles, WORKFLOWS_DIR)
+    printSection('── your workflows ──', userRows)
+  }
 
   for (const s of subs) {
-    const files = listSubWorkflowFiles(s.name)
-    if (files.length === 0) continue
+    const files = subFiles.get(s.name)
+    if (!files || files.length === 0) continue
     const rows = toRows(files, path.join(SUBS_DIR, s.name, 'workflows'))
     printSection(`── ${s.name} ──  (subscribed · ${s.url})`, rows, s.name)
   }

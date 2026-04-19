@@ -83,12 +83,12 @@ Each sub-flow is self-contained if entered directly (user says "add a telegram c
 ## CLI surface reference
 
 ```
-browser-cli list                                 list workflows
+browser-cli list [<site>]                        list workflows (filter: substring, '.' ↔ '~')
 browser-cli describe <name>                      show a workflow's params
 browser-cli run <name> [args]                    run a workflow once
 browser-cli config                               LLM provider setup
 
-browser-cli task list                            list tasks with status
+browser-cli task list [<site>]                   list tasks with status (filter matches underlying workflow)
 browser-cli task create <name>                   interactive task scaffolder
 browser-cli task show <name>                     task config + recent runs + state
 browser-cli task run <name>                      run a task once (same as daemon tick)

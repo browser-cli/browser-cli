@@ -29,9 +29,10 @@ import { recentRuns } from '../store/runs.ts'
 import { listChannels } from '../store/channels.ts'
 import { ensureCustomCdpReachable, ensurePlaywriter } from '../preflight.ts'
 import { resolveCdpUrl } from '../stagehand-config.ts'
+import { matchesSite, parseSiteArg } from './parse-site-arg.ts'
 
 const USAGE = `Usage:
-  browser-cli task list                      List all tasks with status and next run
+  browser-cli task list [<site>] [--site <pat>]  List tasks (status + next run), optionally filtered by site
   browser-cli task create <name>             Interactive scaffolder for a new task
   browser-cli task show <name>               Config, recent runs, item/snapshot state
   browser-cli task run <name> [--cdp-url]    Run once (same code path as daemon tick)
@@ -51,7 +52,7 @@ export async function runTask(argv: string[]): Promise<void> {
   switch (sub) {
     case 'list':
     case 'ls':
-      return cmdList()
+      return cmdList(rest)
     case 'create':
     case 'new':
       return cmdCreate(rest)
@@ -73,18 +74,50 @@ export async function runTask(argv: string[]): Promise<void> {
   }
 }
 
-async function cmdList(): Promise<void> {
+async function cmdList(argv: string[] = []): Promise<void> {
   ensureHomeDirs()
-  const { synced, errors } = await syncAllTasks()
-  const rows = listTaskRows()
+  const { site } = parseSiteArg(argv)
+  const { synced, errors, loaded } = await syncAllTasks()
+  const allRows = listTaskRows()
   for (const err of errors) {
     process.stderr.write(`task ${err.name}: load error — ${err.error}\n`)
   }
 
+  const workflowByTask = new Map<string, string>()
+  for (const t of loaded) workflowByTask.set(t.name, t.config.workflow)
+
+  const rows = site
+    ? allRows.filter((r) => matchesSite(workflowByTask.get(r.name) ?? r.name, site))
+    : allRows
+
   const { subs } = readRegistry()
-  const hasSubTasks = subs.some((s) => listSubTaskFiles(s.name).length > 0)
+  const subEntries: { sub: string; name: string; workflow: string }[] = []
+  for (const s of subs) {
+    for (const f of listSubTaskFiles(s.name)) {
+      const name = f.replace(/\.ts$/, '')
+      let workflow = name
+      if (site) {
+        try {
+          const t = await loadTask(`${s.name}/${name}`)
+          workflow = t.config.workflow
+        } catch {
+          // unreadable sub task — fall back to matching by filename
+        }
+      }
+      subEntries.push({ sub: s.name, name, workflow })
+    }
+  }
+  const filteredSub = site
+    ? subEntries.filter((e) => matchesSite(e.workflow, site))
+    : subEntries
+
+  const hasSubTasks = filteredSub.length > 0
 
   if (rows.length === 0 && errors.length === 0 && !hasSubTasks) {
+    if (site) {
+      process.stderr.write(`no tasks match "${site}"\n`)
+      return
+    }
     process.stderr.write(
       `no tasks in ${TASKS_DIR}\ncreate one with: browser-cli task create <name>\n`,
     )
@@ -108,9 +141,15 @@ async function cmdList(): Promise<void> {
     }
   }
 
+  const bySub = new Map<string, string[]>()
+  for (const e of filteredSub) {
+    const arr = bySub.get(e.sub) ?? []
+    arr.push(e.name)
+    bySub.set(e.sub, arr)
+  }
   for (const s of subs) {
-    const files = listSubTaskFiles(s.name).map((f) => f.replace(/\.ts$/, ''))
-    if (files.length === 0) continue
+    const files = bySub.get(s.name)
+    if (!files || files.length === 0) continue
     process.stdout.write(`\n── ${s.name} (subscribed, read-only) ──\n`)
     const nameCol = Math.max(4, ...files.map((f) => f.length))
     process.stdout.write(
@@ -125,7 +164,7 @@ async function cmdList(): Promise<void> {
     }
   }
 
-  if (synced.length === 0 && rows.length > 0) {
+  if (synced.length === 0 && allRows.length > 0) {
     process.stderr.write(
       '\nnote: the on-disk tasks dir is empty; showing historical rows from sqlite.\n',
     )
