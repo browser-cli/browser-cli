@@ -42,6 +42,35 @@ async function isRelayReachable(): Promise<boolean> {
   }
 }
 
+function toHttpProbe(cdpUrl: string): string {
+  const u = new URL(cdpUrl)
+  const httpProto =
+    u.protocol === 'wss:' ? 'https:' : u.protocol === 'ws:' ? 'http:' : u.protocol
+  return `${httpProto}//${u.host}/json/version`
+}
+
+export async function ensureCustomCdpReachable(cdpUrl: string): Promise<void> {
+  const probe = toHttpProbe(cdpUrl)
+  try {
+    const res = await fetch(probe, { signal: AbortSignal.timeout(1500) })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  } catch (err) {
+    process.stderr.write(
+      [
+        '',
+        `Cannot reach CDP endpoint at ${cdpUrl}`,
+        `  Probe: GET ${probe} -> ${(err as Error).message}`,
+        '',
+        'Checks:',
+        '  1) Is your fingerprint browser running with remote-debugging exposed?',
+        `  2) Verify with:  curl ${new URL(probe).origin}/json/version`,
+        '',
+      ].join('\n'),
+    )
+    process.exit(1)
+  }
+}
+
 async function detectPlaywriterVersion(): Promise<string | null> {
   try {
     const { stdout } = await execa('playwriter', ['--version'], { timeout: 3000 })

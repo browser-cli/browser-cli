@@ -43,26 +43,57 @@ Examples:
 └── mail~google~com/       ← subdomains get their own folder; no collision with google~com
 ```
 
-Invocation mirrors the folder name:
+Invocation mirrors the folder name. Three arg forms are auto-detected (pick whichever is terser):
 
 ```bash
-browser-cli run news~ycombinator~com/top '{"limit":5}'
-browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs"}'
+browser-cli run news~ycombinator~com/top 5                              # positional (schema order)
+browser-cli run x~com/profile-tweets --username ClaudeDevs --limit 20   # named flags
+browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs"}'        # JSON (complex inputs)
 ```
 
 ## Running a workflow
 
 ```bash
 browser-cli list                              # table of name · updated · description
-browser-cli run <domain>/<name> '<json-args>' # run one workflow, JSON to stdout
+browser-cli describe <domain>/<name>          # parameter table + usage examples
+browser-cli run <domain>/<name> [args]        # positional / --flag / JSON, see above
+browser-cli run <domain>/<name> --help        # same as `describe`, no execution
+browser-cli run <domain>/<name> [args] --cdp-url <url>   # run inside an external Chrome
 browser-cli --help                            # usage
 ```
 
 Exit 0 on success, non-zero on script throw. Stdout is JSON (for piping); stderr is human messages (errors, prompts, preflight hints).
 
 ```bash
-browser-cli run news~ycombinator~com/top '{"limit":5}' | jq '.[].title'
+browser-cli run news~ycombinator~com/top 5 | jq '.[].title'
 ```
+
+Give each schema field a `.describe("...")` string — `browser-cli describe` surfaces it as the per-parameter docstring, so unfamiliar workflows become self-documenting at the CLI.
+
+## External CDP / fingerprint browsers
+
+The runner connects to Playwriter's relay at `ws://127.0.0.1:19988` by default
+(your main Chrome). To run a workflow inside a different browser — a
+fingerprint browser profile (AdsPower, BitBrowser, Multilogin, Hubstudio, …) or
+any Chrome started with `--remote-debugging-port=9222` — pass `--cdp-url`:
+
+```bash
+# HTTP discovery URL — browser-cli resolves the websocket via /json/version
+browser-cli run news~ycombinator~com/top 5 --cdp-url http://127.0.0.1:9222
+
+# Or paste the raw websocket URL straight from .webSocketDebuggerUrl
+browser-cli run news~ycombinator~com/top 5 \
+  --cdp-url "ws://127.0.0.1:9222/devtools/browser/abc123"
+
+# Or persist a default for the shell
+export BROWSER_CLI_CDP_URL=http://127.0.0.1:9222
+browser-cli run news~ycombinator~com/top 5
+```
+
+Workflow files do NOT change — the CDP endpoint is a runner-level concern
+selected at invocation time. When `--cdp-url` is supplied the Playwriter
+preflight is skipped and browser-cli probes `/json/version` on the given host
+instead, failing fast with a clear error if unreachable.
 
 ## Script shape
 
@@ -319,6 +350,8 @@ LLM_MODEL=openai/<model>
 Fallbacks if neither is set: `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`.
 
 Override the home directory via `BROWSER_CLI_HOME=/some/path`.
+Set a default external CDP endpoint via `BROWSER_CLI_CDP_URL=http://127.0.0.1:9222`
+(equivalent to passing `--cdp-url` on every run).
 Toggle full stack traces via `BROWSER_CLI_DEBUG=1`.
 
 ## Quick reference
