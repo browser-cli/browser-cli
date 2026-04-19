@@ -23,3 +23,6 @@ export {
 } from './paths.ts'
 export { captureResponses, waitForJsonResponse, pageFetch } from './helpers/network.ts'
 export type { CapturedResponse, Matcher, StagehandPage } from './helpers/network.ts'
+export { notify } from './notify/index.ts'
+export type { NotifyPayload, NotifyResult } from './notify/index.ts'
+export type { TaskConfig, RssConfig, NotifyConfig, LoadedTask } from './task/types.ts'
