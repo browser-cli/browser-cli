@@ -48,9 +48,11 @@ browser-cli notify add <name> '<apprise-url>'
 
 The URL will be stored verbatim. Don't worry about special characters — wrap in single quotes to protect from shell interpolation.
 
-### Step 4: offer a test
+### Step 4: test the channel (MANDATORY ask)
 
-Ask: "Want me to send a test notification to verify it works?"
+You **must** ask the user — do not skip this step, even if the URL "looks right". Apprise reports success on a 2xx response, but a 2xx doesn't prove the message reached the user's device (wrong chat ID, muted topic, spam folder, expired webhook all surface as "ok" from apprise).
+
+Ask exactly: **"Want me to send a test notification to `<name>` now to verify it actually arrives?"**
 
 If yes:
 
@@ -58,9 +60,15 @@ If yes:
 browser-cli notify test <name>
 ```
 
-Ask the user to confirm they received the notification on the target platform.
+After the command returns, **ask the user to confirm receipt on the target device**:
 
-If the test fails:
+> "Sent. Did the test message actually arrive on `<platform>`? (yes / no — and what did it say if it arrived garbled)"
+
+Do not move on to Step 5 or report the channel as ready until the user confirms receipt. If they say no (or the message arrived broken), treat it as a failure even if `notify test` exited 0.
+
+If the user declines the test, note explicitly: "Skipping test — channel is saved but unverified. Run `browser-cli notify test <name>` later before relying on it."
+
+If the test fails (apprise error OR user didn't receive it):
 - Check the user's error output. `apprise` usually prints a specific reason (auth failed, unreachable host, invalid format).
 - Common causes: wrong bot token, chat ID off by one, expired Slack webhook, SMTP auth/TLS misconfig.
 - Let them edit with `browser-cli notify rm <name>` + re-add, or directly hand-edit `~/.browser-cli/db.sqlite` if they know SQL.
