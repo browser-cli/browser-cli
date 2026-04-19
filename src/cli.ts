@@ -2,12 +2,19 @@ import { runList } from './commands/list.ts'
 import { runRunCommand } from './commands/run.ts'
 import { runConfig } from './commands/config.ts'
 import { runDescribe } from './commands/describe.ts'
+import { runNotify } from './commands/notify.ts'
+import { runTask } from './commands/task.ts'
+import { runDaemon } from './commands/daemon.ts'
 
 const USAGE = `Usage:
   browser-cli list                                      List workflows in ~/.browser-cli/workflows/
   browser-cli describe <name>                           Show a workflow's parameters and usage examples
   browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end
   browser-cli config [--provider <p>]                   Interactively configure the LLM provider in ~/.browser-cli/.env
+  browser-cli notify <subcommand>                       Manage notification channels (add/list/test/rm)
+  browser-cli task <subcommand>                         Manage tasks (list/create/show/run/enable/disable/rm)
+  browser-cli daemon [--detach|-d]                      Start the scheduler (foreground or detached)
+  browser-cli daemon status|stop                        Inspect/stop a detached daemon
   browser-cli --help                                    Show this message
 
 Args for \`run\` accept three forms (auto-detected):
@@ -56,6 +63,15 @@ async function main(): Promise<void> {
       return
     case 'config':
       await runConfig(rest)
+      return
+    case 'notify':
+      await runNotify(rest)
+      return
+    case 'task':
+      await runTask(rest)
+      return
+    case 'daemon':
+      await runDaemon(rest)
       return
     default:
       process.stderr.write(`Unknown command: ${cmd}\n\n${USAGE}`)

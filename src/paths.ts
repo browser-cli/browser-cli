@@ -8,8 +8,13 @@ export const HOME_DIR = process.env.BROWSER_CLI_HOME
   : path.join(os.homedir(), '.browser-cli')
 
 export const WORKFLOWS_DIR = path.join(HOME_DIR, 'workflows')
+export const TASKS_DIR = path.join(HOME_DIR, 'tasks')
+export const FEEDS_DIR = path.join(HOME_DIR, 'feeds')
 export const CACHE_DIR = path.join(HOME_DIR, '.cache')
 export const ENV_FILE = path.join(HOME_DIR, '.env')
+export const DB_PATH = path.join(HOME_DIR, 'db.sqlite')
+export const DAEMON_PID_PATH = path.join(HOME_DIR, 'daemon.pid')
+export const DAEMON_LOG_PATH = path.join(HOME_DIR, 'daemon.log')
 export const NODE_MODULES_LINK = path.join(HOME_DIR, 'node_modules')
 
 const THIS_FILE = fileURLToPath(import.meta.url)
@@ -17,8 +22,28 @@ export const PACKAGE_ROOT = path.resolve(path.dirname(THIS_FILE), '..')
 
 export function ensureHomeDirs(): void {
   fs.mkdirSync(WORKFLOWS_DIR, { recursive: true })
+  fs.mkdirSync(TASKS_DIR, { recursive: true })
+  fs.mkdirSync(FEEDS_DIR, { recursive: true })
   fs.mkdirSync(CACHE_DIR, { recursive: true })
   ensureNodeModulesLink()
+}
+
+export function resolveTaskPath(name: string): string {
+  const clean = name.replace(/\.ts$/, '')
+  if (clean.includes('..') || path.isAbsolute(clean)) {
+    throw new Error(`Invalid task name: ${name}`)
+  }
+  return path.join(TASKS_DIR, `${clean}.ts`)
+}
+
+export function listTaskFiles(): string[] {
+  if (!fs.existsSync(TASKS_DIR)) return []
+  return walkTsFiles(TASKS_DIR, '').sort()
+}
+
+export function feedPath(taskName: string): string {
+  const clean = taskName.replace(/\.ts$/, '').replace(/\//g, '__')
+  return path.join(FEEDS_DIR, `${clean}.xml`)
 }
 
 // Workflow files live outside our package (in ~/.browser-cli/workflows/) and

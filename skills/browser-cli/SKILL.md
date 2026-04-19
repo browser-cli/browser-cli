@@ -1,369 +1,108 @@
 ---
 name: browser-cli
-description: "Use when the user wants to create, run, or debug a browser automation workflow stored in ~/.browser-cli/. Covers the `browser-cli` CLI, the runner conventions, and the step-by-step playwriter-REPL flow for authoring new workflows with verified selectors/scroll behavior. Triggers on references to ~/.browser-cli/, `browser-cli run`, or asks like \"写一个 x.com 的脚本\" / \"抓一下 <site> 的...\" when the goal is a persistent, reusable workflow."
-version: 1.0.0
+description: "Use when the user wants to create, run, or debug browser automations stored in ~/.browser-cli/, schedule them as tasks (RSS feeds, page-change monitoring, new-item notifications), or configure notification channels. Triggers on references to ~/.browser-cli/, `browser-cli run`, `browser-cli task`, scheduled-scraping asks like \"每小时抓 X\", change-detection asks like \"网页 X 有变化就通知我\", RSS-feed asks, or notification-channel setup."
+version: 2.0.0
 ---
 
 # browser-cli
 
-A workflow-folder-based browser automation system running on the user's real Chrome (logged-in, extensions alive). Stack:
+A CLI and SDK for running browser automations on the user's real logged-in Chrome. Tasks layered on top add scheduling, stateful diffing, RSS feeds, and apprise-backed notifications.
 
-- **playwriter** (Chrome extension + CDP relay at `ws://127.0.0.1:19988`) — provides the Chrome attach
-- **Stagehand v3** — SDK with `page.evaluate`, `context.newPage`, optional `act()/extract()` with cache + selfHeal
-- LLM gateway via `~/.browser-cli/.env` (OpenAI-compatible, tool-calling supported)
+This skill has three sub-flows. Based on the user's intent, **read ONE of these files and follow its instructions**:
 
-## Directory layout
+## 1. Creating or debugging a workflow
+
+**Read:** `./workflow-create.md`
+
+**Triggers:**
+- "write a script that scrapes X"
+- "抓一下 X 的 Y" / "写一个 X 的脚本"
+- "run a workflow", "debug this workflow", "why is my workflow failing"
+- Any mention of `~/.browser-cli/workflows/` or `browser-cli run`
+- "notify me if this workflow fails / if login expired" (covered as a notify-on-error extension in `workflow-create.md`)
+
+Workflows are pure functions: input args → JSON output. Stateless. One-shot unless wrapped in a task.
+
+## 2. Creating a scheduled task (stateful, recurring)
+
+**Read:** `./task-create.md`
+
+**Triggers:**
+- "poll X every N minutes / hours"
+- "run this on a schedule" / "cron"
+- "give me an RSS feed of X"
+- "notify me when Y changes" / "监控 Y 的变化"
+- "监控网页 X 有新内容就通知我"
+- Any mention of `browser-cli task` or `browser-cli daemon`
+
+Tasks wrap a workflow with `{ schedule, args, itemKey, output, notify }`. Supports two diff modes:
+- **items** (set `itemKey`): workflow returns `T[]`, framework dedupes → RSS/new-item detection
+- **snapshot** (no `itemKey`): workflow returns any JSON, framework hashes → page-change detection
+
+## 3. Adding a notification channel
+
+**Read:** `./channel-create.md`
+
+**Triggers:**
+- "add telegram / discord / email notify"
+- "set up notifications"
+- "configure apprise"
+- "I want notifications to go to X"
+- Also loaded implicitly from flows 1 and 2 when they need a channel that doesn't exist yet
+
+Channels are named apprise URLs stored in sqlite. Once saved, refer to them by name from workflows (`notify('tg-me', ...)`) or tasks (`notify: { channels: ['tg-me'] }`).
+
+## Cross-flow orchestration
+
+The sub-flows reference each other:
+
+```
+user: "每小时抓 HN 有新条目就推 Telegram"
+  → SKILL.md → task-create.md
+    → checks workflows → hn-top missing → load workflow-create.md → return
+    → checks channels → none saved → load channel-create.md → return
+    → writes ~/.browser-cli/tasks/hn-rss.ts
+    → reminds user: start browser-cli daemon
+```
+
+Each sub-flow is self-contained if entered directly (user says "add a telegram channel" → SKILL.md → channel-create.md → done).
+
+## CLI surface reference
+
+```
+browser-cli list                                 list workflows
+browser-cli describe <name>                      show a workflow's params
+browser-cli run <name> [args]                    run a workflow once
+browser-cli config                               LLM provider setup
+
+browser-cli task list                            list tasks with status
+browser-cli task create <name>                   interactive task scaffolder
+browser-cli task show <name>                     task config + recent runs + state
+browser-cli task run <name>                      run a task once (same as daemon tick)
+browser-cli task enable|disable <name>           toggle scheduling
+browser-cli task rm <name>                       delete task file + db row
+
+browser-cli daemon [--detach|-d]                 start the scheduler
+browser-cli daemon status                        check running daemon
+browser-cli daemon stop                          stop detached daemon
+
+browser-cli notify add <name> <apprise-url>      register a named channel
+browser-cli notify list [--json]                 list channels
+browser-cli notify test <name>                   send a test notification
+browser-cli notify rm <name>                     delete a channel
+```
+
+## Filesystem layout
 
 ```
 ~/.browser-cli/
-├── workflows/                workflow scripts live here (recursed)
-│   ├── <domain>/<name>.ts    actual workflows, grouped by target site (see below)
-│   └── test/                 exploratory and regression scripts
-├── .cache/                   Stagehand action cache (SHA256-keyed JSON)
-├── .env                      LLM_API_KEY / LLM_BASE_URL / LLM_MODEL (gitignored)
-└── node_modules/             auto-symlinked to the installed package on first `run`
+├── workflows/<name>.ts        pure functions (schema + run)
+├── tasks/<name>.ts            scheduled + stateful wrappers (config export)
+├── feeds/<task>.xml           RSS feeds emitted by items-mode tasks
+├── db.sqlite                  tasks / items / snapshots / runs / channels
+├── daemon.pid                 pidfile for detached daemon
+├── daemon.log                 detached-daemon stdout/stderr
+├── .cache/                    Stagehand action cache
+├── .env                       LLM config
+└── node_modules/              auto-symlinked; workflows/tasks import from here
 ```
-
-The `browser-cli` binary itself comes from `npm install -g @browserclijs/browser-cli` and is on PATH.
-
-### Folder naming convention
-
-One folder per target **domain**, using the **full domain with dots replaced by `~`**. Rationale: short aliases like `x/`, `hn/`, `google/` collide across TLDs (`example.com` vs `example.org`). The domain is the natural unique key.
-
-Examples:
-```
-~/.browser-cli/workflows/
-├── news~ycombinator~com/
-│   └── top.ts
-├── x~com/
-│   ├── profile-tweets.ts
-│   └── my-timeline.ts
-├── github~com/
-│   └── star.ts
-└── mail~google~com/       ← subdomains get their own folder; no collision with google~com
-```
-
-Invocation mirrors the folder name. Three arg forms are auto-detected (pick whichever is terser):
-
-```bash
-browser-cli run news~ycombinator~com/top 5                              # positional (schema order)
-browser-cli run x~com/profile-tweets --username ClaudeDevs --limit 20   # named flags
-browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs"}'        # JSON (complex inputs)
-```
-
-## Running a workflow
-
-```bash
-browser-cli list                              # table of name · updated · description
-browser-cli describe <domain>/<name>          # parameter table + usage examples
-browser-cli run <domain>/<name> [args]        # positional / --flag / JSON, see above
-browser-cli run <domain>/<name> --help        # same as `describe`, no execution
-browser-cli run <domain>/<name> [args] --cdp-url <url>   # run inside an external Chrome
-browser-cli --help                            # usage
-```
-
-Exit 0 on success, non-zero on script throw. Stdout is JSON (for piping); stderr is human messages (errors, prompts, preflight hints).
-
-```bash
-browser-cli run news~ycombinator~com/top 5 | jq '.[].title'
-```
-
-Give each schema field a `.describe("...")` string — `browser-cli describe` surfaces it as the per-parameter docstring, so unfamiliar workflows become self-documenting at the CLI.
-
-## External CDP / fingerprint browsers
-
-The runner connects to Playwriter's relay at `ws://127.0.0.1:19988` by default
-(your main Chrome). To run a workflow inside a different browser — a
-fingerprint browser profile (AdsPower, BitBrowser, Multilogin, Hubstudio, …) or
-any Chrome started with `--remote-debugging-port=9222` — pass `--cdp-url`:
-
-```bash
-# HTTP discovery URL — browser-cli resolves the websocket via /json/version
-browser-cli run news~ycombinator~com/top 5 --cdp-url http://127.0.0.1:9222
-
-# Or paste the raw websocket URL straight from .webSocketDebuggerUrl
-browser-cli run news~ycombinator~com/top 5 \
-  --cdp-url "ws://127.0.0.1:9222/devtools/browser/abc123"
-
-# Or persist a default for the shell
-export BROWSER_CLI_CDP_URL=http://127.0.0.1:9222
-browser-cli run news~ycombinator~com/top 5
-```
-
-Workflow files do NOT change — the CDP endpoint is a runner-level concern
-selected at invocation time. When `--cdp-url` is supplied the Playwriter
-preflight is skipped and browser-cli probes `/json/version` on the given host
-instead, failing fast with a clear error if unreachable.
-
-## Script shape
-
-Every workflow exports a zod `schema` and an async `run`. Two extraction shapes
-are supported; **prefer the API-first shape** when the page renders from JSON
-(most modern SPAs do — see "Decision: API-first vs DOM" below).
-
-```ts
-import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
-import { waitForJsonResponse, pageFetch } from '@browserclijs/browser-cli'
-
-/** One-line description — shown by `browser-cli list`. */
-export const schema = z.object({ /* inputs */ })
-
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
-
-  // -- API-first (preferred): capture the JSON the page itself fetches --
-  const { json } = await waitForJsonResponse(page, /\/api\/things/)
-  await page.goto('https://example.com/things', { waitUntil: 'domcontentloaded' })
-  return (json as { items: unknown[] }).items
-
-  // -- Active fetch: hit the API directly, reusing the page's session/cookies --
-  // await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
-  // return await pageFetch(page, 'https://example.com/api/things')
-
-  // -- DOM scrape (fallback): only when no JSON backs the page --
-  // await page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
-  // return await page.evaluate(() => Array.from(document.querySelectorAll('…')).map(…))
-}
-```
-
-The three helpers are exported from `@browserclijs/browser-cli`:
-- `waitForJsonResponse(page, match, opts?)` — install BEFORE `page.goto`; resolves to the first matching JSON response.
-- `captureResponses(page, match, opts?)` — install BEFORE `page.goto`; returns `{ list(), clear() }` for bulk inspection (e.g. while scrolling).
-- `pageFetch<T>(page, url, init?)` — fire a request from the page's JS context (inherits cookies / same-origin auth).
-
-The runner handles:
-- Loading `~/.browser-cli/.env` via `process.loadEnvFile`
-- Stagehand init with a **unique** `cdpUrl: ws://127.0.0.1:19988/cdp/bc-<pid>-<ts>` (relay rejects duplicate clientIds with code 4004)
-- Closing pages the script opened + orphan about:blank tabs from Stagehand's init
-- Printing the returned value as pretty JSON to stdout
-
-**Do not call `stagehand.close()` inside the script.** The runner does it.
-
-## Creating a new workflow — step-by-step flow (PREFERRED)
-
-**Use whenever:** the target site is unfamiliar, selectors/scroll behavior need verification, or you're unsure whether the page virtualizes content. Don't write 100 lines on the first guess — always has 2–3 runtime bugs that cost minutes each to diagnose.
-
-**API-first principle:** before scraping any DOM, check whether the page is just rendering a JSON response. Most modern SPAs (X, Reddit, GitHub, Linear, Notion, …) are. APIs change far less than markup, return the full result without virtualization, and skip scroll/wait-for-render. **Always do step 3 (network capture) before step 4 (DOM probe).** Skip step 4 entirely when step 3 finds the data.
-
-### 1. Open a playwriter session (persistent REPL)
-
-```bash
-SID=$(playwriter session new | tail -1 | tr -d '[:space:]')
-echo "session=$SID"
-```
-
-The `state` object inside playwriter's executor persists across `-e` invocations tied to the same `$SID`. Use it to carry `state.p` (your working page) between steps.
-
-Always pass `--timeout 40000` (default 10s is too short for goto + waitForSelector on real sites).
-
-### 2. Navigate and pin the page to state
-
-```bash
-playwriter -s $SID --timeout 40000 -e '
-  state.p = await context.newPage();
-  await state.p.goto("https://<target>", { waitUntil: "domcontentloaded" });
-  await state.p.waitForSelector("<stable-anchor-selector>", { timeout: 20000 });
-  console.log(JSON.stringify({ title: await state.p.title(), url: state.p.url() }));
-'
-```
-
-Verify: title is what you expect, you're in the logged-in view (not a login wall).
-
-### 3. Capture network responses (DO THIS BEFORE DOM PROBING)
-
-Install a JSON response listener **before** the navigation in step 2 — for new sessions reorder the steps so the listener attaches first. For existing sessions, navigate again with the listener already in place.
-
-```bash
-playwriter -s $SID --timeout 40000 -e '
-  state.responses = []
-  state.p.on("response", async (r) => {
-    const ct = r.headers()["content-type"] || ""
-    if (!ct.includes("json")) return
-    try { state.responses.push({ url: r.url(), status: r.status(), method: r.request().method(), json: await r.json() }) } catch (e) {}
-  })
-  await state.p.goto("https://<target>", { waitUntil: "domcontentloaded" })
-  await state.p.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {})
-  console.log(JSON.stringify(state.responses.map(r => ({ url: r.url, status: r.status, method: r.method, keys: r.json && typeof r.json === "object" ? Object.keys(r.json).slice(0, 8) : null })), null, 2))
-'
-```
-
-Read the list. Look for:
-- A response whose URL contains a stable path like `/api/`, `/graphql`, `/v1/`, `/_next/data/`, `/internal/`
-- A `keys` array that obviously contains the data the user asked for (e.g. `["items"]`, `["data", "user"]`, `["edges"]`)
-
-If you see a candidate, pull its body to confirm shape:
-
-```bash
-playwriter -s $SID -e '
-  const r = state.responses.find(x => x.url.includes("/api/stories"))
-  console.log(JSON.stringify(r.json, null, 2).slice(0, 2000))
-'
-```
-
-If the data is there, **stop probing the DOM** and skip to step 5. Use `waitForJsonResponse` (passive — waits for the page to fire it) or `pageFetch` (active — fires it yourself, faster but may need extra headers) when you commit the workflow.
-
-If the page renders server-side (no useful JSON in the responses), or the only matching responses are HTML/CSS/JS, **then** continue to step 4.
-
-#### Decision: API-first vs DOM
-
-| Question | If yes → | If no → |
-|---|---|---|
-| Is the data inside one of the captured JSON responses? | API-first (step 5 with `waitForJsonResponse`) | DOM (step 4) |
-| Does the request fire on every navigation, predictably? | `waitForJsonResponse` — passive, mirrors a real visit | `pageFetch` — active, fire it directly after `goto` |
-| Does the API need auth headers the page sets dynamically? | `pageFetch` (cookies + same-origin auth come from the page) | Either |
-| Does the page virtualize a long list? | API-first — the response usually returns the full page | DOM with dedup-while-scrolling (step 4) |
-
-### 4. Probe the DOM shape
-
-Query the smallest possible surface first. Use `JSON.stringify` so the output is parseable and compact.
-
-```bash
-playwriter -s $SID --timeout 40000 -e '
-  const data = await state.p.evaluate(() => {
-    const items = Array.from(document.querySelectorAll("article[data-testid=tweet]")).slice(0,1);
-    return items.map(el => ({
-      hasText: !!el.querySelector("[data-testid=tweetText]"),
-      hasTime: !!el.querySelector("time"),
-      href: el.querySelector("time")?.closest("a")?.getAttribute("href"),
-    }));
-  });
-  console.log(JSON.stringify(data));
-'
-```
-
-One sample tells you whether the selectors resolve. If `hasText: false`, the test-id changed — investigate before scaling.
-
-### 5. Characterize scroll / pagination
-
-Many modern sites (Twitter/X, Instagram, some SPAs) **virtualize lists** — off-screen items are removed from the DOM. A single "scrape after scroll" pattern will silently drop data. Always measure:
-
-```bash
-playwriter -s $SID --timeout 60000 -e '
-  const counts = [];
-  for (let i=0; i<5; i++) {
-    await state.p.evaluate(() => window.scrollBy(0, window.innerHeight * 0.9));
-    await new Promise(r => setTimeout(r, 800));
-    const n = await state.p.evaluate(() => document.querySelectorAll("<selector>").length);
-    counts.push(n);
-  }
-  const atBottom = await state.p.evaluate(() => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 50);
-  console.log(JSON.stringify({ counts, atBottom }));
-'
-```
-
-Interpret:
-- Linear growth → simple `scrape-after-scroll` works
-- Plateau / drop → **virtualization**; you must dedup-while-scrolling (use a stable key like tweet URL, item href, `data-id`)
-- `atBottom: true` AND no new items over N consecutive scrolls → done
-
-### 6. Commit to a workflow
-
-Drop the verified logic into `~/.browser-cli/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
-
-### 7. Run via `browser-cli` and verify
-
-```bash
-browser-cli run <domain>/<name> '<args>'
-```
-
-If it fails when the REPL succeeded, see **Known gotchas** below.
-
-## Creating a new workflow — quick-start flow
-
-Skip the REPL only when you already know the answer to the API-vs-DOM question:
-
-- You know a public/internal JSON endpoint and its shape (use `pageFetch` directly — see `examples/github-repo-summary.ts`)
-- The page is static HTML with stable markup and no login/virtualization (use `page.evaluate` directly — see `examples/hn-top.ts`)
-
-Even here, spend ~30s opening DevTools Network to confirm the API exists and returns what you expect — assumptions about response shape are the #1 source of "worked locally, broke on first run" bugs.
-
-Start from an existing workflow (`examples/github-repo-summary.ts` for API-first, `examples/hn-top.ts` for DOM), edit, run with `browser-cli run`, iterate.
-
-## Known gotchas
-
-### `__name is not defined`
-`tsx/esbuild` wraps named arrow functions with `__name(fn, "label")` to preserve debug names. That helper doesn't exist in the page's JS context. Symptom: `StagehandEvalError: Uncaught`, then `ReferenceError: __name is not defined`.
-
-Fix — right after `page.goto` / `waitForSelector`, inject the stub via a **string** expression (strings bypass tsx's transform):
-
-```ts
-await page.evaluate(
-  'globalThis.__name = globalThis.__name || function(f){return f}',
-)
-```
-
-Do this ONCE per page before any function-form `page.evaluate(() => ...)` call.
-
-### DOM virtualization
-See step 4 above. When in doubt, measure counts across scrolls before writing the extractor. For Twitter/X specifically: incremental scroll by `0.9 × innerHeight`, 800ms settle, dedup by `article > time > a[href]`.
-
-### Stagehand's evaluate vs playwriter's executor
-Within the playwriter REPL (`playwriter -s $SID -e '...'`), you can freely use arrow functions — playwriter's VM doesn't have the `__name` issue. Inside a `browser-cli run` script, you need the stub. Don't assume "it worked in the REPL" implies "it works in the script."
-
-Prefer **string expressions** for side-effect-only calls (`page.evaluate('window.scrollBy(0, innerHeight)')`) — they avoid the stub question entirely.
-
-### Cleanup behavior (runner)
-The runner closes:
-- Pages the script opened via `context.newPage()`
-- Tabs that were `about:blank` before the run AND still `about:blank` after (these are Stagehand's init-created blanks)
-
-The runner does NOT touch the user's real navigated tabs.
-
-### Concurrent runs
-Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process, so `browser-cli run ... & browser-cli run ... & wait` works. Two concurrent workflows that mutate the **same** page or cookies can still race — one workflow per tab is the safe pattern.
-
-### Stagehand URL drift (minor)
-`stagehand.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `~/.browser-cli/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
-
-### LLM gateway must support `response_format: json_schema`
-Stagehand's `act()`/`extract()` rely on structured output via OpenAI's json_schema mode. If the gateway ignores it and returns prose, you'll see `AI_NoObjectGeneratedError`. The user's `aigate` gateway already supports this as of 2026-04-18.
-
-### Output formats (roadmap, not yet implemented)
-Current MVP prints pretty JSON only. Multiple output formats (`table`/`csv`/`md`/`jsonl`) and optional `export const columns` / `defaultFormat` from the script are planned for a later milestone. For now, pipe to `jq` for shaping.
-
-### LLM-driven fallback (roadmap, not yet implemented)
-Three layers are on the roadmap but not wired: selector self-heal surfacing into the runner's error channel, request-schema drift detection, and full workflow rewrite with auto-versioning. The underlying Stagehand `selfHeal` already runs inside `act()`.
-
-The new network helpers (`captureResponses` / `waitForJsonResponse` / `pageFetch`) are the foundation for L2 (request-schema drift): once a workflow extracts from a typed JSON shape, "the API moved a field" is a clean signal the runner can detect (zod parse failure on the response) and feed back to the LLM for re-mapping. The DOM-extraction path can't give us this without a brittle "did the page render fewer items than usual?" heuristic.
-
-## Environment
-
-`~/.browser-cli/.env` (gitignored). Run `browser-cli config` to set it up interactively, or hand-edit.
-
-Two main providers:
-
-**A. Claude Code subscription** (free on Max, but ~6-10s per LLM call):
-```
-LLM_PROVIDER=claude-agent-sdk
-LLM_MODEL=claude-sonnet-4-5   # optional
-```
-Requires `claude` authenticated and `@anthropic-ai/claude-agent-sdk` installed.
-
-**B. OpenAI-compatible endpoint** (fast, any gateway / local model server):
-```
-LLM_API_KEY=sk-...
-LLM_BASE_URL=https://<endpoint>/v1
-LLM_MODEL=openai/<model>
-```
-
-Fallbacks if neither is set: `OPENAI_API_KEY`, then `ANTHROPIC_API_KEY`.
-
-Override the home directory via `BROWSER_CLI_HOME=/some/path`.
-Set a default external CDP endpoint via `BROWSER_CLI_CDP_URL=http://127.0.0.1:9222`
-(equivalent to passing `--cdp-url` on every run).
-Toggle full stack traces via `BROWSER_CLI_DEBUG=1`.
-
-## Quick reference
-
-| Task | Command |
-|---|---|
-| List active playwriter sessions | `playwriter session list` |
-| New session for REPL | `playwriter session new` |
-| REPL step | `playwriter -s $SID --timeout 40000 -e '<js>'` |
-| List workflows | `browser-cli list` |
-| Run a workflow | `browser-cli run <domain>/<name> '<args>'` |
-| Configure LLM provider | `browser-cli config` |
-| Check relay health | `curl -s http://127.0.0.1:19988/` |
-| List tabs | `playwriter browser list` |
-| Start relay | `playwriter serve --replace` |
