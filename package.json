@@ -4,7 +4,7 @@
   "description": "Run browser automation workflows against your logged-in Chrome via Stagehand + Playwriter.",
   "type": "module",
   "bin": {
-    "browser-cli": "./dist/cli.js"
+    "browser-cli": "dist/cli.js"
   },
   "main": "./dist/sdk.js",
   "types": "./dist/sdk.d.ts",
@@ -71,5 +71,13 @@
     "cli",
     "workflow"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/browser-cli/browser-cli.git"
+  },
+  "homepage": "https://github.com/browser-cli/browser-cli#readme",
+  "bugs": {
+    "url": "https://github.com/browser-cli/browser-cli/issues"
+  }
 }
