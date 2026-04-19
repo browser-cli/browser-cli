@@ -1,12 +1,23 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { WORKFLOWS_DIR, listWorkflowFiles } from '../paths.ts'
+import {
+  SUBS_DIR,
+  WORKFLOWS_DIR,
+  listSubWorkflowFiles,
+  listWorkflowFiles,
+} from '../paths.ts'
+import { readRegistry } from '../subs/registry.ts'
 import { extractDescription } from '../workflow-meta.ts'
 
-export async function runList(): Promise<void> {
-  const files = listWorkflowFiles()
+type Row = { name: string; description: string; mtime: string }
 
-  if (files.length === 0) {
+export async function runList(): Promise<void> {
+  const userFiles = listWorkflowFiles()
+  const { subs } = readRegistry()
+
+  const hasAny = userFiles.length > 0 || subs.some((s) => listSubWorkflowFiles(s.name).length > 0)
+
+  if (!hasAny) {
     process.stderr.write(
       [
         '',
@@ -16,17 +27,28 @@ export async function runList(): Promise<void> {
         '  - `schema` (Zod object)',
         '  - `run(stagehand, args)` async function',
         '',
-        'Copy the example workflow to get started:',
-        '  mkdir -p ~/.browser-cli/workflows',
-        '  cp "$(npm root -g)"/@browserclijs/browser-cli/examples/hn-top.ts ~/.browser-cli/workflows/',
+        'Or subscribe to a shared repo:',
+        '  browser-cli sub add <git-url>',
         '',
       ].join('\n'),
     )
     return
   }
 
-  const rows = files.map((file) => {
-    const abs = path.join(WORKFLOWS_DIR, file)
+  const userRows = toRows(userFiles, WORKFLOWS_DIR)
+  printSection('── your workflows ──', userRows)
+
+  for (const s of subs) {
+    const files = listSubWorkflowFiles(s.name)
+    if (files.length === 0) continue
+    const rows = toRows(files, path.join(SUBS_DIR, s.name, 'workflows'))
+    printSection(`── ${s.name} ──  (subscribed · ${s.url})`, rows, s.name)
+  }
+}
+
+function toRows(files: string[], baseDir: string): Row[] {
+  return files.map((file) => {
+    const abs = path.join(baseDir, file)
     const stat = fs.statSync(abs)
     return {
       name: file.replace(/\.ts$/, ''),
@@ -34,14 +56,25 @@ export async function runList(): Promise<void> {
       mtime: stat.mtime.toISOString().slice(0, 10),
     }
   })
-
-  const nameCol = Math.max(4, ...rows.map((r) => r.name.length))
-  const dateCol = 10
-  const header = `${'NAME'.padEnd(nameCol)}  ${'UPDATED'.padEnd(dateCol)}  DESCRIPTION`
-  process.stdout.write(header + '\n')
-  process.stdout.write('-'.repeat(header.length) + '\n')
-  for (const r of rows) {
-    process.stdout.write(`${r.name.padEnd(nameCol)}  ${r.mtime.padEnd(dateCol)}  ${r.description}\n`)
-  }
 }
 
+function printSection(title: string, rows: Row[], subPrefix?: string): void {
+  if (rows.length === 0) {
+    process.stdout.write(`\n${title}\n  (none)\n`)
+    return
+  }
+  const display = rows.map((r) => ({
+    ...r,
+    runName: subPrefix ? `${subPrefix}/${r.name}` : r.name,
+  }))
+  const nameCol = Math.max(4, ...display.map((r) => r.runName.length))
+  const dateCol = 10
+  process.stdout.write(`\n${title}\n`)
+  process.stdout.write(
+    `${'NAME'.padEnd(nameCol)}  ${'UPDATED'.padEnd(dateCol)}  DESCRIPTION\n`,
+  )
+  process.stdout.write('-'.repeat(nameCol + dateCol + 17) + '\n')
+  for (const r of display) {
+    process.stdout.write(`${r.runName.padEnd(nameCol)}  ${r.mtime.padEnd(dateCol)}  ${r.description}\n`)
+  }
+}

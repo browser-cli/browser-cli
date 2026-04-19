@@ -4,7 +4,15 @@ import type { ZodSchema, z } from 'zod'
 import { ZodError } from 'zod'
 import { Stagehand as StagehandCtor } from '@browserbasehq/stagehand'
 import { makeStagehandConfig } from './stagehand-config.ts'
-import { CACHE_DIR, WORKFLOWS_DIR, ensureHomeDirs, loadDotEnv, resolveWorkflowPath } from './paths.ts'
+import {
+  CACHE_DIR,
+  WORKFLOWS_DIR,
+  ensureHomeDirs,
+  loadDotEnv,
+  parseNamespaced,
+  resolveSubWorkflowPath,
+  resolveWorkflowPath,
+} from './paths.ts'
 import { loadTs } from './ts-loader.ts'
 
 export type WorkflowModule<S extends ZodSchema = ZodSchema> = {
@@ -37,7 +45,8 @@ export async function loadWorkflow(name: string): Promise<{ mod: WorkflowModule;
   loadDotEnv()
   ensureHomeDirs()
 
-  const workflowPath = resolveWorkflowPath(name)
+  const { sub, rest } = parseNamespaced(name)
+  const workflowPath = sub ? resolveSubWorkflowPath(sub, rest) : resolveWorkflowPath(name)
   if (!fs.existsSync(workflowPath)) {
     throw new Error(`Workflow not found: ${workflowPath}\nRun \`browser-cli list\` to see available workflows in ${WORKFLOWS_DIR}`)
   }

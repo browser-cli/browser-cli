@@ -267,6 +267,16 @@ browser-cli run <domain>/<name> '<args>'
 
 If it fails when the REPL succeeded, see **Known gotchas** below.
 
+### 8. Commit the new workflow
+
+After the workflow is written and verified, end with:
+
+```bash
+browser-cli sync
+```
+
+Relay the prompt output `[y]es / [n]o / [d]iff / [s]how-files` to the user and wait for their answer. If they pick `d` or `s`, re-run `browser-cli sync` so they can see the details before committing. Skip this step if the user has explicitly said not to commit, or if you only read files (no writes).
+
 ## Creating a new workflow — quick-start flow
 
 Skip the REPL only when you already know the answer to the API-vs-DOM question:

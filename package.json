@@ -29,7 +29,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "tsx --test test/**/*.test.ts",
+    "postinstall": "node dist/postinstall.js 2>/dev/null || true"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.103",

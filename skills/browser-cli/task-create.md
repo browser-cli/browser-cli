@@ -138,6 +138,16 @@ browser-cli daemon --detach     # background — writes ~/.browser-cli/daemon.pi
 
 For boot-start on macOS, the user can wrap `browser-cli daemon --detach` in a launchd plist; we don't install one automatically in v1.
 
+### Step 9: commit the task file
+
+If you used `browser-cli task create <name>` above, the scaffolder already runs the commit prompt at its tail — no extra step needed. If you **hand-wrote** the task file (used `Write` / `Edit` tools directly), end with:
+
+```bash
+browser-cli sync
+```
+
+Relay the `[y]es / [n]o / [d]iff / [s]how-files` prompt to the user and wait for their reply. On `d` or `s` re-run `sync` so the details print before they commit.
+
 ## Snapshot-mode examples
 
 ### Amazon price watch

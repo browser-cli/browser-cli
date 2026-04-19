@@ -8,7 +8,7 @@ version: 2.0.0
 
 A CLI and SDK for running browser automations on the user's real logged-in Chrome. Tasks layered on top add scheduling, stateful diffing, RSS feeds, and apprise-backed notifications.
 
-This skill has three sub-flows. Based on the user's intent, **read ONE of these files and follow its instructions**:
+This skill has four sub-flows. Based on the user's intent, **read ONE of these files and follow its instructions**:
 
 ## 1. Creating or debugging a workflow
 
@@ -52,6 +52,19 @@ Tasks wrap a workflow with `{ schedule, args, itemKey, output, notify }`. Suppor
 
 Channels are named apprise URLs stored in sqlite. Once saved, refer to them by name from workflows (`notify('tg-me', ...)`) or tasks (`notify: { channels: ['tg-me'] }`).
 
+## 4. Managing subscriptions (shared git repos of workflows/tasks)
+
+**Read:** `./sub-manage.md`
+
+**Triggers:**
+- "subscribe to X" / "订阅 X"
+- "share these scripts with my team" / "分享这些脚本给同事"
+- "pull updates from the team pack" / "这个 sub 的脚本更新了"
+- "这个 sub 的脚本报错了我想改" / "fork this subscribed workflow so I can edit"
+- Any mention of `browser-cli sub`, `~/.browser-cli-subs/`, or `subs.json`
+
+Subscriptions are additional git repos cloned to `~/.browser-cli-subs/<sub-name>/` containing shared `workflows/` and/or `tasks/`. They are **read-only** — to modify a subscribed script, `sub copy` it into the user's own `~/.browser-cli/` first.
+
 ## Cross-flow orchestration
 
 The sub-flows reference each other:
@@ -90,19 +103,45 @@ browser-cli notify add <name> <apprise-url>      register a named channel
 browser-cli notify list [--json]                 list channels
 browser-cli notify test <name>                   send a test notification
 browser-cli notify rm <name>                     delete a channel
+
+browser-cli init                                 re-sync layout; print git status + remote hint
+browser-cli sync                                 review uncommitted changes + commit (y/n/diff/show)
+
+browser-cli sub add <git-url> [--name N]         clone a shared repo of workflows/tasks
+browser-cli sub list                             list subscriptions with counts
+browser-cli sub update [name]                    git fetch + hard-reset; warns if dirty
+browser-cli sub remove <name>                    delete clone + registry entry
+browser-cli sub copy <sub>/<wf-or-task>          fork a subscribed file into your own workflows/ or tasks/
 ```
+
+## Post-write commits
+
+`~/.browser-cli/` is a git repo (auto-initialized on first use). Whenever you write or edit files there — `workflows/*.ts`, `tasks/*.ts`, `subs.json` — end the flow by calling:
+
+```bash
+browser-cli sync
+```
+
+This prints a summary of uncommitted changes and prompts the user `[y]es / [n]o / [d]iff / [s]how-files`. Relay the prompt output to the user; if they answer `d` or `s`, re-run so they can see the details before committing. CLI subcommands that mutate files (`task create`, `task rm`, `sub add|update|remove|copy`) already call the same prompt at their tail, so you don't need to call `sync` after those — only after you used the `Write` or `Edit` tool directly.
 
 ## Filesystem layout
 
 ```
-~/.browser-cli/
-├── workflows/<name>.ts        pure functions (schema + run)
-├── tasks/<name>.ts            scheduled + stateful wrappers (config export)
-├── feeds/<task>.xml           RSS feeds emitted by items-mode tasks
-├── db.sqlite                  tasks / items / snapshots / runs / channels
-├── daemon.pid                 pidfile for detached daemon
-├── daemon.log                 detached-daemon stdout/stderr
-├── .cache/                    Stagehand action cache
-├── .env                       LLM config
-└── node_modules/              auto-symlinked; workflows/tasks import from here
+~/.browser-cli/                ← git repo (tracked; pushable to a remote)
+├── workflows/<name>.ts        pure functions (schema + run)       [tracked]
+├── tasks/<name>.ts            scheduled + stateful wrappers       [tracked]
+├── subs.json                  registry of subscribed repos        [tracked]
+├── .gitignore                 excludes state/logs/credentials     [tracked]
+├── feeds/<task>.xml           RSS feeds emitted by items-mode tasks [ignored]
+├── db.sqlite                  tasks / items / snapshots / runs / channels [ignored]
+├── daemon.pid                 pidfile for detached daemon         [ignored]
+├── daemon.log                 detached-daemon stdout/stderr       [ignored]
+├── .cache/                    Stagehand action cache              [ignored]
+├── .env                       LLM config                          [ignored]
+└── node_modules/              auto-symlinked                      [ignored]
+
+~/.browser-cli-subs/           ← NOT tracked by the user's repo
+└── <sub-name>/                each is its own git clone, managed by `browser-cli sub`
+    ├── workflows/             read-only — `sub copy` to fork
+    └── tasks/                 read-only — `sub copy` to enable (copies into user's tasks/)
 ```
