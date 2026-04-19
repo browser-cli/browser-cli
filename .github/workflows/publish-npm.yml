@@ -88,13 +88,13 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Upgrade npm for trusted publishing
+        run: npm install -g npm@latest
+
       - name: Publish to npm
-        env:
-          NPM_CONFIG_PROVENANCE: 'true'
         run: |
           set -euo pipefail
-          echo "Publishing ${{ steps.meta.outputs.version }} with dist-tag '${{ steps.meta.outputs.npm_tag }}'"
-          pnpm publish \
+          echo "Publishing ${{ steps.meta.outputs.version }} with dist-tag '${{ steps.meta.outputs.npm_tag }}' via npm $(npm --version)"
+          npm publish \
             --access public \
-            --no-git-checks \
             --tag "${{ steps.meta.outputs.npm_tag }}"
