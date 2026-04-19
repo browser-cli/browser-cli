@@ -61,14 +61,11 @@ jobs:
           echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
           echo "npm_tag=$NPM_TAG"   >> "$GITHUB_OUTPUT"
 
-      - name: Verify package.json version matches tag
+      - name: Write version from tag into package.json
         run: |
           set -euo pipefail
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$PKG_VERSION" != "${{ steps.meta.outputs.version }}" ]; then
-            echo "package.json version ($PKG_VERSION) does not match tag (${{ steps.meta.outputs.version }})." >&2
-            exit 1
-          fi
+          npm pkg set version="${{ steps.meta.outputs.version }}"
+          echo "package.json version set to $(node -p "require('./package.json').version")"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
