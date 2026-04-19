@@ -10,7 +10,7 @@ import { runSync } from './commands/sync.ts'
 import { runSub } from './commands/sub.ts'
 
 const USAGE = `Usage:
-  browser-cli list                                      List workflows (yours + subscribed)
+  browser-cli list [<site>] [--site <pattern>]          List workflows (yours + subscribed), optionally filtered by site
   browser-cli describe <name>                           Show a workflow's parameters and usage examples
   browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end (namespaced as <sub>/<workflow> for subs)
   browser-cli config [--provider <p>]                   Interactively configure the LLM provider in ~/.browser-cli/.env
@@ -22,6 +22,10 @@ const USAGE = `Usage:
   browser-cli sync                                      Review uncommitted changes in ~/.browser-cli and commit
   browser-cli sub <subcommand>                          Manage subscribed repos (add/list/update/remove/copy)
   browser-cli --help                                    Show this message
+
+\`list\` / \`task list\` accept an optional site filter — case-insensitive substring
+match where '.' and '~' are interchangeable. \`list hn\`, \`list ycombinator\`, and
+\`list news.ycombinator.com\` all match workflows under news~ycombinator~com/.
 
 Args for \`run\` accept three forms (auto-detected):
   - Positional in schema order:   browser-cli run x~com/profile-tweets ClaudeDevs 20
@@ -58,7 +62,7 @@ async function main(): Promise<void> {
 
   switch (cmd) {
     case 'list':
-      await runList()
+      await runList(rest)
       return
     case 'run':
       await runRunCommand(rest)

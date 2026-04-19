@@ -2,6 +2,7 @@ import { Cron } from 'croner'
 import { getDb } from '../store/db.ts'
 import { loadAllTasks } from './loader.ts'
 import type { LoadedTask } from './types.ts'
+export type { LoadedTask } from './types.ts'
 
 export type TaskRow = {
   name: string
@@ -43,6 +44,7 @@ export async function syncAllTasks(): Promise<{
   synced: string[]
   orphaned: string[]
   errors: { name: string; error: string }[]
+  loaded: LoadedTask[]
 }> {
   const now = Date.now()
   const db = getDb()
@@ -58,7 +60,7 @@ export async function syncAllTasks(): Promise<{
   }
   // Don't delete orphans automatically — keep run history. A future `task cleanup` can prune them.
 
-  return { synced: loaded.map((t) => t.name), orphaned, errors }
+  return { synced: loaded.map((t) => t.name), orphaned, errors, loaded }
 }
 
 export function getTaskRow(name: string): TaskRow | null {

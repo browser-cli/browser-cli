@@ -1,6 +1,16 @@
 # Workflow creation (browser-cli sub-flow)
 
-**Loaded from `SKILL.md`.** Use this when the user wants to create, run, or debug a browser automation workflow stored in `~/.browser-cli/workflows/`. For scheduled/stateful tasks wrapping a workflow, see `./task-create.md`. For notification channel setup, see `./channel-create.md`.
+**Loaded from `SKILL.md`.**
+
+## When to load this skill
+
+Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in `~/.browser-cli/workflows/`. Concrete triggers:
+
+- **Create** — "写一个抓 X 的脚本" / "scrape X" / "get Y from Z site" / "监控 X 的 Y" / any new automation ask
+- **Fix** — "这个 workflow 报错了" / "selectors broke" / "login expired" / "zod parse failed" / any `browser-cli run` failure. See the **Fixing an existing workflow** procedure under **Known gotchas** below.
+- **Modify** — "把 limit 改成 50" / "多返回一个字段" / "改成抓登录后的页面" / any edit to an existing file under `workflows/`
+
+For scheduling a workflow on cron (with diff/RSS/notifications), see `./task-create.md` instead — this file only covers the workflow itself. For notification channel setup, see `./channel-create.md`.
 
 ## browser-cli
 
@@ -138,11 +148,57 @@ The runner handles:
 
 **Do not call `stagehand.close()` inside the script.** The runner does it.
 
+## Decision: which execution path
+
+Before any probing, walk this tree. It decides whether you even need a browser at all.
+
+1. **Can the user's goal be served by a public / documented JSON API?**
+   - Check the site's `/api/`, `/graphql`, `/_next/data/`, or published REST docs.
+   - Unknown? Spend 30 seconds in step 3 below (network capture in a playwriter REPL) to see whether the page itself fetches JSON that contains the ask.
+
+2. **If yes → does the API require login / cookies / dynamic auth headers?**
+   - **No auth** → **Path A (shell)**. Don't open a browser at all. Answer with a plain `curl` / `fetch` — or, if the user specifically wants a workflow file, use `pageFetch` against the public endpoint from a blank origin (see `examples/github-repo-summary.ts`). The script is ~10 lines and never touches the DOM.
+   - **Needs auth** → **Path B (page-API)**. Open the page so Stagehand inherits the user's real Chrome cookies, then either `waitForJsonResponse(page, /pattern/)` (passive — let the page fire the request) or `pageFetch(page, url)` (active — fire it yourself with the page's session).
+
+3. **If no (data only renders in the DOM)** → **Path C (DOM + Stagehand)**. Prefer `stagehand.observe()` / `stagehand.extract()` / `stagehand.act()` (they get `cacheDir` + `selfHeal` from the runner — see `src/stagehand-config.ts`). Fall back to raw `page.evaluate` only for trivial static pages where CSS selectors are obviously stable (e.g. HN front page).
+
+| Path | When | Tools | Robustness |
+|---|---|---|---|
+| A — shell | Public API, no login | `curl` / `fetch` / `pageFetch` from blank page | Highest (no LLM in the loop) |
+| B — page-API | Private API behind login | `waitForJsonResponse`, `pageFetch` | High (depends on API shape drift) |
+| C — DOM + Stagehand | Data only in rendered HTML | `observe` → `act` / `extract` (+ cache, selfHeal) | LLM-healable (see §4 below) |
+
+**Rule of thumb:** Every step down the list costs more tokens, runs slower, and breaks more often. Pick the highest path that actually serves the data.
+
 ## Creating a new workflow — step-by-step flow (PREFERRED)
 
 **Use whenever:** the target site is unfamiliar, selectors/scroll behavior need verification, or you're unsure whether the page virtualizes content. Don't write 100 lines on the first guess — always has 2–3 runtime bugs that cost minutes each to diagnose.
 
 **API-first principle:** before scraping any DOM, check whether the page is just rendering a JSON response. Most modern SPAs (X, Reddit, GitHub, Linear, Notion, …) are. APIs change far less than markup, return the full result without virtualization, and skip scroll/wait-for-render. **Always do step 3 (network capture) before step 4 (DOM probe).** Skip step 4 entirely when step 3 finds the data.
+
+### 0. Check for an existing workflow first (DO THIS BEFORE ANYTHING ELSE)
+
+Before writing anything new, list what's already saved and look for a match by target domain. Pass the site as a filter — substring, case-insensitive, and `.`/`~` are interchangeable:
+
+```bash
+browser-cli list <site>          # e.g. `browser-cli list hn` or `browser-cli list news.ycombinator.com`
+browser-cli list                 # omit the filter if you want the full picture
+```
+
+Map the user's ask to a domain folder using the `.` → `~` convention (e.g. "抓 HN" → `news~ycombinator~com/`, "抓我的推特" → `x~com/`). Also skim subscriptions — shared packs may already cover the ask:
+
+```bash
+browser-cli sub list          # if any subs are registered, inspect their workflows/ dirs too
+```
+
+If there's a plausible hit (same domain, overlapping purpose), STOP and ask the user:
+
+- **Reuse** — run the existing workflow with their args (`browser-cli describe <name>` to show params, then `browser-cli run <name> ...`). Done; no new file.
+- **Modify** — open the existing file and edit in place. Jump to the **Fixing an existing workflow** procedure under **Known gotchas** (same pattern applies to feature tweaks, not just bug fixes).
+- **Fork a subscribed one** — if the hit is under `~/.browser-cli-subs/<sub>/`, run `browser-cli sub copy <sub>/<name>` to fork it into the user's own `workflows/` before editing. See `./sub-manage.md`.
+- **New one anyway** — only if the user confirms the existing workflow genuinely doesn't cover the goal (different auth, different endpoint, different output shape). Pick a distinct filename — don't overwrite.
+
+Only proceed to step 1 after the user has chosen "new one anyway" or no hit exists. Silent duplicates under the same domain folder are the failure mode to avoid.
 
 ### 1. Open a playwriter session (persistent REPL)
 
@@ -212,9 +268,56 @@ If the page renders server-side (no useful JSON in the responses), or the only m
 | Does the API need auth headers the page sets dynamically? | `pageFetch` (cookies + same-origin auth come from the page) | Either |
 | Does the page virtualize a long list? | API-first — the response usually returns the full page | DOM with dedup-while-scrolling (step 4) |
 
-### 4. Probe the DOM shape
+### 4. Probe the DOM (Path C) — prefer Stagehand primitives
 
-Query the smallest possible surface first. Use `JSON.stringify` so the output is parseable and compact.
+Reach for Stagehand's LLM-driven primitives **first**; they survive DOM drift far better than hand-written CSS/XPath, and they pay for themselves once `cacheDir` + `selfHeal` warm up (see step 7). Order: `observe` → then `extract` or `act`. Each step narrows what the next one sees, keeping token cost low.
+
+**4a. `observe()` — find candidate elements and get stable selectors**
+
+Returns `Promise<Action[]>` where each entry has `{ description, method, selector, arguments }`. Selectors are freshly resolved on every call, so they adapt to class-name churn.
+
+```ts
+const listings = await stagehand.observe('find the product cards on the page')
+// [{ description: 'Product card "Foo"', method: 'click', selector: 'xpath=…', … }, …]
+```
+
+**4b. `extract()` — pull structured data with a zod schema**
+
+Scope it to the container from `observe` to cut tokens:
+
+```ts
+const [container] = await stagehand.observe('find the product list container')
+const products = await stagehand.extract(
+  'extract name, price, and url for every product card',
+  z.array(z.object({
+    name: z.string(),
+    price: z.string().describe('as displayed, incl. currency symbol'),
+    url: z.string().url(),
+  })),
+  { selector: container.selector },
+)
+```
+
+**4c. `act()` — interact (click / fill / scroll) via an observed action**
+
+Feed the observed action straight into `act`. With `cacheDir` + `selfHeal` already wired in `src/stagehand-config.ts`, the first run caches the action; later runs skip the LLM call unless the DOM moved enough to need a self-heal.
+
+```ts
+const [loginBtn] = await stagehand.observe('find the sign-in button in the header')
+await stagehand.act(loginBtn)
+```
+
+**When to fall back to raw `page.evaluate`:**
+
+- Static HTML with obvious stable selectors (e.g. `examples/hn-top.ts` — `tr.athing`).
+- Imperative DOM work — scroll loops, dedup-while-scrolling for virtualized lists (step 5 below).
+- Trivial reads (`document.title`, `location.href`).
+
+Everything else — especially "find the button that says…" / "get the price from the card that…" — should go through `observe` / `extract` / `act`. That's where the cache + selfHeal earns its keep.
+
+If you do use function-form `page.evaluate(() => …)`, inject the `__name` stub first — see **Known gotchas**.
+
+**Quick DOM sanity probe (raw evaluate, for the static-selector case):**
 
 ```bash
 playwriter -s $SID --timeout 40000 -e '
@@ -230,7 +333,7 @@ playwriter -s $SID --timeout 40000 -e '
 '
 ```
 
-One sample tells you whether the selectors resolve. If `hasText: false`, the test-id changed — investigate before scaling.
+One sample tells you whether the selectors resolve. If `hasText: false`, the test-id changed — either fix the selector or switch to `observe` + `extract` for that lookup.
 
 ### 5. Characterize scroll / pagination
 
@@ -259,13 +362,20 @@ Interpret:
 
 Drop the verified logic into `~/.browser-cli/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
 
-### 7. Run via `browser-cli` and verify
+### 7. Run via `browser-cli` and verify — TWICE
 
 ```bash
-browser-cli run <domain>/<name> '<args>'
+browser-cli run <domain>/<name> '<args>'     # first run: populates Stagehand cache in ~/.browser-cli/.cache/
+browser-cli run <domain>/<name> '<args>'     # second run: should be noticeably faster, hitting cached observe/act
 ```
 
-If it fails when the REPL succeeded, see **Known gotchas** below.
+What to check:
+
+1. **First run succeeds** and the output JSON matches what the user asked for. Diff against a small golden sample if the data is deterministic.
+2. **Second run is faster** and still returns the same shape. If it doesn't, either the page is non-deterministic (pagination, personalization) or the cache key is drifting — note it and move on; `selfHeal` will handle minor drift later.
+3. **Cache files exist** under `~/.browser-cli/.cache/` after the first run (only when Path C actually used `observe` / `act` / `extract` — Path A/B workflows don't populate this cache). If you expected cache entries and none appear, the LLM gateway probably doesn't support `response_format: json_schema` — see **Known gotchas**.
+
+If the first run fails when the REPL step succeeded, see **Known gotchas** below.
 
 ### 8. Commit the new workflow
 
@@ -289,6 +399,18 @@ Even here, spend ~30s opening DevTools Network to confirm the API exists and ret
 Start from an existing workflow (`examples/github-repo-summary.ts` for API-first, `examples/hn-top.ts` for DOM), edit, run with `browser-cli run`, iterate.
 
 ## Known gotchas
+
+### Fixing an existing workflow
+
+Trigger: user says "this workflow broke" / "zod parse failed" / "selectors 404'd" / "上次能跑现在跑不了".
+
+1. Run `browser-cli run <name>` and read the error. Three common shapes:
+   - `AI_NoObjectGeneratedError` → the LLM gateway regressed on structured output, or the `extract` schema no longer matches the DOM. Re-run `observe` on the live page to see the new shape before touching the schema.
+   - `zod parse failed` on a captured JSON response (Path B) → the site's API changed. Capture the response again in a REPL (step 3) and diff it against the workflow's type; update the type or the pick.
+   - `locator … not found` / `timeout waiting for …` → selectors moved (Path C with raw `page.evaluate`). Consider migrating that lookup to `observe` so the next regression self-heals.
+2. Reproduce in a playwriter REPL (steps 1–3 of the step-by-step flow) against the same page state the cron run sees.
+3. Clear `~/.browser-cli/.cache/` entries for the affected instruction before the fix re-run, so you don't race against stale cache entries while iterating.
+4. Re-verify with `browser-cli run` twice (step 7) before `browser-cli sync`.
 
 ### `__name is not defined`
 `tsx/esbuild` wraps named arrow functions with `__name(fn, "label")` to preserve debug names. That helper doesn't exist in the page's JS context. Symptom: `StagehandEvalError: Uncaught`, then `ReferenceError: __name is not defined`.
