@@ -58,4 +58,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
           workingDirectory: docs
-          command: pages deploy dist --project-name=browser-cli --branch=${{ steps.branch.outputs.name }}
+          command: pages deploy dist --project-name=browser-cli-docs --branch=${{ steps.branch.outputs.name }}
