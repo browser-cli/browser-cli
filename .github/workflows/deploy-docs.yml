@@ -51,16 +51,6 @@ jobs:
             echo "name=main" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Debug — whoami + list Pages projects
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          workingDirectory: docs
-          command: |
-            whoami
-            pages project list
-
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
