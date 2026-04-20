@@ -8,6 +8,7 @@ import { runDaemon } from './commands/daemon.ts'
 import { runInit } from './commands/init.ts'
 import { runSync } from './commands/sync.ts'
 import { runSub } from './commands/sub.ts'
+import { checkForUpdate } from './versionCheck.ts'
 
 const USAGE = `Usage:
   browser-cli list [<site>] [--site <pattern>]          List workflows (yours + subscribed), optionally filtered by site
@@ -59,6 +60,8 @@ async function main(): Promise<void> {
     process.stdout.write(USAGE)
     return
   }
+
+  checkForUpdate(cmd)
 
   switch (cmd) {
     case 'list':
