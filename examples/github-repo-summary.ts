@@ -1,8 +1,14 @@
 import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
-import { pageFetch } from '@browserclijs/browser-cli'
+import type { Browser } from '@browserclijs/browser-cli'
 
-/** Fetch a GitHub repo summary (description, stars, language, topics) via the JSON API. */
+/**
+ * Fetch a GitHub repo summary (description, stars, language, topics) via the JSON API.
+ *
+ * Layer 2 example — GitHub exposes a JSON API, so we land on github.com
+ * to inherit the user's session (higher rate limits than anonymous calls)
+ * and then call `page.fetch`. No DOM scraping involved; markup changes
+ * to github.com cannot break this workflow.
+ */
 export const schema = z.object({
   owner: z.string().min(1),
   repo: z.string().min(1),
@@ -20,15 +26,13 @@ type RepoData = {
   html_url: string
 }
 
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
-  // Land on github.com first so the fetch runs from a real page origin (and
-  // inherits the user's logged-in session if they have one — gives higher
-  // rate limits than anonymous api.github.com calls).
+export async function run(browser: Browser, args: z.infer<typeof schema>) {
+  const page = await browser.newPage()
+  // Land on github.com first so the fetch runs from a real page origin and
+  // inherits the user's logged-in session (higher rate limits than anonymous).
   await page.goto('https://github.com/', { waitUntil: 'domcontentloaded' })
 
-  const data = await pageFetch<RepoData>(
-    page,
+  const data = await page.fetch<RepoData>(
     `https://api.github.com/repos/${args.owner}/${args.repo}`,
     { headers: { Accept: 'application/vnd.github+json' } },
   )

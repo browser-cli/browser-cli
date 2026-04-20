@@ -2,6 +2,37 @@
 
 **Loaded from `SKILL.md`.**
 
+## Core rule (read first)
+
+> **Workflows import only `Browser` from `@browserclijs/browser-cli`.**
+> Never import `@browserbasehq/stagehand` or `playwright` directly,
+> never call `page.unsafe().evaluate(() => document.querySelectorAll(…))`.
+>
+> Three resilient layers, in strict priority order:
+>
+> 1. **Public API exists and you've verified it returns the data unauthenticated**
+>    → still a workflow, but **don't open a browser**. The `run(browser, args)`
+>    function never calls `browser.newPage()` — it just `fetch`es the public
+>    endpoint directly (Node's global `fetch`). The runner skips Stagehand init
+>    entirely if no page is ever opened. This is the most robust path: no Chrome,
+>    no CDP, no LLM, no markup risk.
+> 2. **Browser needed but data comes through a JSON endpoint**
+>    → `page.fetch` / `page.captureResponses` / `page.waitForJsonResponse`.
+>    Trigger via a page action; read the network. **Do not touch the DOM.**
+> 3. **DOM is unavoidable** → `page.extract` / `page.act` / `page.observe`.
+>    These are LLM-cached and `selfHeal`-backed: when the site renames a
+>    class or shifts a container, the cache invalidates and Stagehand
+>    re-resolves the selector on the next run.
+>
+> Raw `document.querySelectorAll` looks convenient and breaks the moment
+> the target site tweaks its markup. We have already been burned by this
+> pattern (April 2026 incident: an orphaned CDP session from a fragile
+> scraper leaked 18 GB of Chrome memory before SIGKILL). The wrapper is
+> a non-negotiable lid: it owns lifecycle cleanup AND it hides the
+> fragile API. If you catch yourself reaching for `page.unsafe()` to
+> scrape, stop — re-walk the three layers, the answer is almost always
+> a level higher than where you started.
+
 ## When to load this skill
 
 Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in `~/.browser-cli/workflows/`. Concrete triggers:
@@ -17,7 +48,7 @@ For scheduling a workflow on cron (with diff/RSS/notifications), see `./task-cre
 A workflow-folder-based browser automation system running on the user's real Chrome (logged-in, extensions alive). Stack:
 
 - **playwriter** (Chrome extension + CDP relay at `ws://127.0.0.1:19988`) — provides the Chrome attach
-- **Stagehand v3** — SDK with `page.evaluate`, `context.newPage`, optional `act()/extract()` with cache + selfHeal
+- **`Browser` wrapper** (`@browserclijs/browser-cli`) — the single API workflows import. Wraps Stagehand v3's `extract` / `act` / `observe` for DOM resilience, re-exports `fetch` / `captureResponses` / `waitForJsonResponse` for the network path, and owns lifecycle + CDP cleanup so a crash or SIGINT can't leak a renderer session.
 - LLM gateway via `~/.browser-cli/.env` (OpenAI-compatible, tool-calling supported)
 
 ## Directory layout
@@ -105,48 +136,55 @@ instead, failing fast with a clear error if unreachable.
 
 ## Script shape
 
-Every workflow exports a zod `schema` and an async `run`. Two extraction shapes
-are supported; **prefer the API-first shape** when the page renders from JSON
-(most modern SPAs do — see "Decision: API-first vs DOM" below).
+Every workflow exports a zod `schema` and an async `run(browser, args)`. The
+`Browser` argument is the single sanctioned API surface — it produces `Page`
+instances whose methods cover all three layers below.
 
 ```ts
 import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
-import { waitForJsonResponse, pageFetch } from '@browserclijs/browser-cli'
+import type { Browser } from '@browserclijs/browser-cli'
 
 /** One-line description — shown by `browser-cli list`. */
-export const schema = z.object({ /* inputs */ })
+export const schema = z.object({
+  limit: z.number().int().positive().default(5),
+})
 
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
-
-  // -- API-first (preferred): capture the JSON the page itself fetches --
-  const { json } = await waitForJsonResponse(page, /\/api\/things/)
+export async function run(browser: Browser, args: z.infer<typeof schema>) {
+  const page = await browser.newPage()
   await page.goto('https://example.com/things', { waitUntil: 'domcontentloaded' })
-  return (json as { items: unknown[] }).items
 
-  // -- Active fetch: hit the API directly, reusing the page's session/cookies --
-  // await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
-  // return await pageFetch(page, 'https://example.com/api/things')
+  // Layer 3 (DOM) — resilient via Stagehand's LLM cache + selfHeal:
+  const data = await page.extract(
+    `find the top ${args.limit} items on the page and return title + url for each`,
+    z.object({ items: z.array(z.object({ title: z.string(), url: z.string().url() })) }),
+  )
+  return data.items
 
-  // -- DOM scrape (fallback): only when no JSON backs the page --
-  // await page.goto('https://example.com', { waitUntil: 'domcontentloaded' })
-  // return await page.evaluate(() => Array.from(document.querySelectorAll('…')).map(…))
+  // Layer 2 (preferred when a JSON endpoint exists):
+  // const json = await page.waitForJsonResponse<{ items: unknown[] }>(/\/api\/things/)
+  // return json.items.slice(0, args.limit)
+
+  // Layer 2 active fetch — inherits the page's cookies / same-origin auth:
+  // return await page.fetch('https://example.com/api/things')
 }
 ```
 
-The three helpers are exported from `@browserclijs/browser-cli`:
-- `waitForJsonResponse(page, match, opts?)` — install BEFORE `page.goto`; resolves to the first matching JSON response.
-- `captureResponses(page, match, opts?)` — install BEFORE `page.goto`; returns `{ list(), clear() }` for bulk inspection (e.g. while scrolling).
-- `pageFetch<T>(page, url, init?)` — fire a request from the page's JS context (inherits cookies / same-origin auth).
+`Page` re-exports the network helpers as methods:
+- `page.waitForJsonResponse(match, opts?)` — resolves to the first matching JSON response (works whether installed before or after `page.goto`; default `credentials: 'include'`).
+- `page.captureResponses(match, opts?)` — returns `{ list(), clear() }` for bulk inspection (e.g. while scrolling).
+- `page.fetch<T>(url, init?)` — fire a request from the page's JS context (inherits cookies / same-origin auth).
 
-The runner handles:
+The runner (via `withBrowser`) handles:
 - Loading `~/.browser-cli/.env` via `process.loadEnvFile`
 - Stagehand init with a **unique** `cdpUrl: ws://127.0.0.1:19988/cdp/bc-<pid>-<ts>` (relay rejects duplicate clientIds with code 4004)
 - Closing pages the script opened + orphan about:blank tabs from Stagehand's init
+- Two-phase Stagehand shutdown (graceful → forced WebSocket terminate) on **every** exit path including SIGINT/SIGTERM/uncaught throws
 - Printing the returned value as pretty JSON to stdout
 
-**Do not call `stagehand.close()` inside the script.** The runner does it.
+**Do not import `Stagehand` and do not call `stagehand.close()` inside the
+workflow.** If you need a teardown hook (e.g. you opened a download stream),
+register it via `browser.onCleanup(fn)` so the runner can sequence it before
+the CDP shutdown.
 
 ## Decision: which execution path
 
@@ -154,19 +192,27 @@ Before any probing, walk this tree. It decides whether you even need a browser a
 
 1. **Can the user's goal be served by a public / documented JSON API?**
    - Check the site's `/api/`, `/graphql`, `/_next/data/`, or published REST docs.
-   - Unknown? Spend 30 seconds in step 3 below (network capture in a playwriter REPL) to see whether the page itself fetches JSON that contains the ask.
+   - Unknown? Spend 30 seconds in step 3 of the step-by-step flow below (network capture in a playwriter REPL) to see whether the page itself fetches JSON that contains the ask.
+   - **Always verify by actually calling the endpoint before committing to Path A** — don't rely on docs alone. An endpoint that requires a session cookie or a dynamic header falls to Path B.
 
-2. **If yes → does the API require login / cookies / dynamic auth headers?**
-   - **No auth** → **Path A (shell)**. Don't open a browser at all. Answer with a plain `curl` / `fetch` — or, if the user specifically wants a workflow file, use `pageFetch` against the public endpoint from a blank origin (see `examples/github-repo-summary.ts`). The script is ~10 lines and never touches the DOM.
-   - **Needs auth** → **Path B (page-API)**. Open the page so Stagehand inherits the user's real Chrome cookies, then either `waitForJsonResponse(page, /pattern/)` (passive — let the page fire the request) or `pageFetch(page, url)` (active — fire it yourself with the page's session).
+2. **If yes and you verified the public endpoint returns the data without auth → Path A (public API, no browser).**
+   The workflow file still exists — `run(browser, args)` is the entry point — but it never calls `browser.newPage()`. Use Node's global `fetch`, `URL`, etc. directly. `withBrowser` lazy-inits Stagehand: if `newPage` is never called, Chrome is never attached and no CDP session is ever registered. This is the fastest, most robust path; no LLM, no renderer, no markup risk.
 
-3. **If no (data only renders in the DOM)** → **Path C (DOM + Stagehand)**. Prefer `stagehand.observe()` / `stagehand.extract()` / `stagehand.act()` (they get `cacheDir` + `selfHeal` from the runner — see `src/stagehand-config.ts`). Fall back to raw `page.evaluate` only for trivial static pages where CSS selectors are obviously stable (e.g. HN front page).
+3. **If the API needs login / cookies / dynamic auth headers → Path B (page-API).**
+   Open a page via `browser.newPage()` so the request inherits the user's real Chrome cookies, then use:
+   - `page.waitForJsonResponse(match, opts?)` — passive. Navigate and let the page fire its own request; this matches a real visit and picks up any session/CSRF headers the page injects.
+   - `page.fetch(url, init?)` — active. Fires a request from the page's JS context. Defaults `credentials: 'include'` so cross-origin cookies come along. Faster than a full navigation when you already know the endpoint.
+   - `page.captureResponses(match, opts?)` — bulk inspection while driving the page (e.g. scrolling a virtualized list).
+
+4. **If the data only renders in the DOM → Path C (DOM via Stagehand).**
+   Use `page.extract(instruction, schema)` / `page.observe(instruction)` / `page.act(instruction)`. These route through Stagehand with `cacheDir` + `selfHeal` already wired (see `src/stagehand-config.ts`), so the first run pays the LLM cost, subsequent runs hit the cache, and a small markup change triggers a re-resolve instead of a hard failure.
+   Do **not** drop to `page.unsafe().evaluate(() => document.querySelectorAll(...))` — that throws away the cache + self-heal and gives you the exact fragility the wrapper was built to prevent. See the `page.unsafe()` section near the end of this file for the narrow set of cases where the escape hatch is legitimate (downloads, cookie seeding, etc.).
 
 | Path | When | Tools | Robustness |
 |---|---|---|---|
-| A — shell | Public API, no login | `curl` / `fetch` / `pageFetch` from blank page | Highest (no LLM in the loop) |
-| B — page-API | Private API behind login | `waitForJsonResponse`, `pageFetch` | High (depends on API shape drift) |
-| C — DOM + Stagehand | Data only in rendered HTML | `observe` → `act` / `extract` (+ cache, selfHeal) | LLM-healable (see §4 below) |
+| A — public API | Public endpoint verified without auth | Node `fetch`; never call `browser.newPage()` | Highest (no browser, no LLM) |
+| B — page-API | Private API behind login | `page.waitForJsonResponse` / `page.fetch` / `page.captureResponses` | High (depends on API shape drift) |
+| C — DOM via Stagehand | Data only in rendered HTML | `page.extract` / `page.observe` / `page.act` (+ cache, selfHeal) | LLM-healable on markup drift |
 
 **Rule of thumb:** Every step down the list costs more tokens, runs slower, and breaks more often. Pick the highest path that actually serves the data.
 
@@ -255,7 +301,7 @@ playwriter -s $SID -e '
 '
 ```
 
-If the data is there, **stop probing the DOM** and skip to step 5. Use `waitForJsonResponse` (passive — waits for the page to fire it) or `pageFetch` (active — fires it yourself, faster but may need extra headers) when you commit the workflow.
+If the data is there, **stop probing the DOM** and skip to step 5. Use `page.waitForJsonResponse(match)` (passive — waits for the page to fire it) or `page.fetch(url, init?)` (active — fires it yourself, faster but may need extra headers) when you commit the workflow.
 
 If the page renders server-side (no useful JSON in the responses), or the only matching responses are HTML/CSS/JS, **then** continue to step 4.
 
@@ -264,60 +310,73 @@ If the page renders server-side (no useful JSON in the responses), or the only m
 | Question | If yes → | If no → |
 |---|---|---|
 | Is the data inside one of the captured JSON responses? | API-first (step 5 with `waitForJsonResponse`) | DOM (step 4) |
-| Does the request fire on every navigation, predictably? | `waitForJsonResponse` — passive, mirrors a real visit | `pageFetch` — active, fire it directly after `goto` |
-| Does the API need auth headers the page sets dynamically? | `pageFetch` (cookies + same-origin auth come from the page) | Either |
+| Does the request fire on every navigation, predictably? | `page.waitForJsonResponse` — passive, mirrors a real visit | `page.fetch` — active, fire it directly after `goto` |
+| Does the API need auth headers the page sets dynamically? | `page.fetch` (cookies + same-origin auth come from the page) | Either |
 | Does the page virtualize a long list? | API-first — the response usually returns the full page | DOM with dedup-while-scrolling (step 4) |
 
-### 4. Probe the DOM (Path C) — prefer Stagehand primitives
+### 4. Probe the DOM (Path C) — Stagehand primitives only
 
-Reach for Stagehand's LLM-driven primitives **first**; they survive DOM drift far better than hand-written CSS/XPath, and they pay for themselves once `cacheDir` + `selfHeal` warm up (see step 7). Order: `observe` → then `extract` or `act`. Each step narrows what the next one sees, keeping token cost low.
+In the committed workflow, every DOM interaction goes through
+`page.extract` / `page.observe` / `page.act`. These are the only DOM
+primitives the `Browser` wrapper exposes on `Page`, and they are the
+reason Stagehand is in the stack — the LLM cache means subsequent runs
+hit O(ms) selector resolution, and `selfHeal` repairs cache entries when
+the site redesigns. Hand-written `querySelectorAll` gets none of that.
 
-**4a. `observe()` — find candidate elements and get stable selectors**
+Order: `observe` → then `extract` or `act`. Each step narrows what the
+next sees, keeping token cost low.
 
-Returns `Promise<Action[]>` where each entry has `{ description, method, selector, arguments }`. Selectors are freshly resolved on every call, so they adapt to class-name churn.
+**4a. `page.observe(instruction)` — find candidate elements and get stable selectors**
+
+Returns `Promise<{ selector: string; description: string }[]>`. Selectors are freshly resolved on every call, so they adapt to class-name churn.
 
 ```ts
-const listings = await stagehand.observe('find the product cards on the page')
-// [{ description: 'Product card "Foo"', method: 'click', selector: 'xpath=…', … }, …]
+const listings = await page.observe('find the product cards on the page')
+// [{ description: 'Product card "Foo"', selector: 'xpath=…' }, …]
 ```
 
-**4b. `extract()` — pull structured data with a zod schema**
-
-Scope it to the container from `observe` to cut tokens:
+**4b. `page.extract(instruction, schema)` — pull structured data with a zod schema**
 
 ```ts
-const [container] = await stagehand.observe('find the product list container')
-const products = await stagehand.extract(
-  'extract name, price, and url for every product card',
-  z.array(z.object({
-    name: z.string(),
-    price: z.string().describe('as displayed, incl. currency symbol'),
-    url: z.string().url(),
-  })),
-  { selector: container.selector },
+const products = await page.extract(
+  'extract name, price, and url for every product card on the page',
+  z.object({
+    products: z.array(
+      z.object({
+        name: z.string(),
+        price: z.string().describe('as displayed, incl. currency symbol'),
+        url: z.string().url(),
+      }),
+    ),
+  }),
 )
+return products.products
 ```
 
-**4c. `act()` — interact (click / fill / scroll) via an observed action**
+**4c. `page.act(instruction)` — interact (click / fill / scroll) via a natural-language instruction**
 
-Feed the observed action straight into `act`. With `cacheDir` + `selfHeal` already wired in `src/stagehand-config.ts`, the first run caches the action; later runs skip the LLM call unless the DOM moved enough to need a self-heal.
+With `cacheDir` + `selfHeal` already wired in `src/stagehand-config.ts`,
+the first run caches the action; later runs skip the LLM call unless the
+DOM moved enough to need a self-heal.
 
 ```ts
-const [loginBtn] = await stagehand.observe('find the sign-in button in the header')
-await stagehand.act(loginBtn)
+await page.act('click the sign-in button in the header')
 ```
 
-**When to fall back to raw `page.evaluate`:**
+For deterministic selector work where Stagehand is overkill — an input
+whose `name` attribute is documented, a button with a stable `id` — the
+wrapper also exposes `page.click(selector)` / `page.fill(selector, value)`
+/ `page.count(selector)` / `page.getText(selector)` /
+`page.waitForSelector(selector, opts?)`. Use them for form fills and
+presence checks, never to replicate a querySelector-based scraper.
 
-- Static HTML with obvious stable selectors (e.g. `examples/hn-top.ts` — `tr.athing`).
-- Imperative DOM work — scroll loops, dedup-while-scrolling for virtualized lists (step 5 below).
-- Trivial reads (`document.title`, `location.href`).
+**Quick DOM sanity probe during iteration (in the playwriter REPL, NOT in the committed workflow):**
 
-Everything else — especially "find the button that says…" / "get the price from the card that…" — should go through `observe` / `extract` / `act`. That's where the cache + selfHeal earns its keep.
-
-If you do use function-form `page.evaluate(() => …)`, inject the `__name` stub first — see **Known gotchas**.
-
-**Quick DOM sanity probe (raw evaluate, for the static-selector case):**
+The REPL is where you experiment with selectors before you commit. Raw
+`page.evaluate` is fine here because playwriter's executor runs in a VM
+without the `__name` issue and nothing about your exploration persists.
+The committed workflow file must still route through `page.extract` /
+`observe` / `act`.
 
 ```bash
 playwriter -s $SID --timeout 40000 -e '
@@ -333,7 +392,9 @@ playwriter -s $SID --timeout 40000 -e '
 '
 ```
 
-One sample tells you whether the selectors resolve. If `hasText: false`, the test-id changed — either fix the selector or switch to `observe` + `extract` for that lookup.
+One sample tells you whether the container selector is stable enough to
+pass into `page.extract` as a `selector` scope later — but the committed
+extraction itself goes through `page.extract`, not `evaluate`.
 
 ### 5. Characterize scroll / pagination
 
@@ -389,14 +450,15 @@ Relay the prompt output `[y]es / [n]o / [d]iff / [s]how-files` to the user and w
 
 ## Creating a new workflow — quick-start flow
 
-Skip the REPL only when you already know the answer to the API-vs-DOM question:
+Skip the REPL only when you already know the answer to the layer question:
 
-- You know a public/internal JSON endpoint and its shape (use `pageFetch` directly — see `examples/github-repo-summary.ts`)
-- The page is static HTML with stable markup and no login/virtualization (use `page.evaluate` directly — see `examples/hn-top.ts`)
+- **Path A** — you've verified (with an actual `curl`) that a public endpoint returns the data without auth. Write a workflow whose `run(browser, args)` never calls `browser.newPage()`; use Node's global `fetch` directly. No browser, no LLM.
+- **Path B** — you know the private JSON endpoint and have confirmed shape + auth pattern. Use `page.fetch` or `page.waitForJsonResponse` (see `examples/github-repo-summary.ts` for the Layer 2 shape).
+- **Path C** — the data is DOM-only and you already know the stable container. Use `page.extract` with a zod schema (see `examples/hn-top.ts` for the Layer 3 shape).
 
-Even here, spend ~30s opening DevTools Network to confirm the API exists and returns what you expect — assumptions about response shape are the #1 source of "worked locally, broke on first run" bugs.
+Even here, spend ~30s opening DevTools Network to confirm an API exists before committing to Path C — assumptions about response shape are the #1 source of "worked locally, broke on first run" bugs.
 
-Start from an existing workflow (`examples/github-repo-summary.ts` for API-first, `examples/hn-top.ts` for DOM), edit, run with `browser-cli run`, iterate.
+Start from an existing workflow (`examples/github-repo-summary.ts` for Layer 2, `examples/hn-top.ts` for Layer 3), edit, run with `browser-cli run`, iterate.
 
 ## Known gotchas
 
@@ -405,40 +467,52 @@ Start from an existing workflow (`examples/github-repo-summary.ts` for API-first
 Trigger: user says "this workflow broke" / "zod parse failed" / "selectors 404'd" / "上次能跑现在跑不了".
 
 1. Run `browser-cli run <name>` and read the error. Three common shapes:
-   - `AI_NoObjectGeneratedError` → the LLM gateway regressed on structured output, or the `extract` schema no longer matches the DOM. Re-run `observe` on the live page to see the new shape before touching the schema.
+   - `AI_NoObjectGeneratedError` → the LLM gateway regressed on structured output, or the `page.extract` schema no longer matches the DOM. Re-run `page.observe` on the live page to see the new shape before touching the schema.
    - `zod parse failed` on a captured JSON response (Path B) → the site's API changed. Capture the response again in a REPL (step 3) and diff it against the workflow's type; update the type or the pick.
-   - `locator … not found` / `timeout waiting for …` → selectors moved (Path C with raw `page.evaluate`). Consider migrating that lookup to `observe` so the next regression self-heals.
+   - `locator … not found` / `timeout waiting for …` → a form-fill selector passed to `page.click` / `page.fill` / `page.waitForSelector` moved. Either update it, or — if this lookup used to be a DOM scrape via `page.unsafe()` — migrate to `page.extract` / `page.observe` so the next regression self-heals.
 2. Reproduce in a playwriter REPL (steps 1–3 of the step-by-step flow) against the same page state the cron run sees.
 3. Clear `~/.browser-cli/.cache/` entries for the affected instruction before the fix re-run, so you don't race against stale cache entries while iterating.
 4. Re-verify with `browser-cli run` twice (step 7) before `browser-cli sync`.
 
-### `__name is not defined`
-`tsx/esbuild` wraps named arrow functions with `__name(fn, "label")` to preserve debug names. That helper doesn't exist in the page's JS context. Symptom: `StagehandEvalError: Uncaught`, then `ReferenceError: __name is not defined`.
-
-Fix — right after `page.goto` / `waitForSelector`, inject the stub via a **string** expression (strings bypass tsx's transform):
-
-```ts
-await page.evaluate(
-  'globalThis.__name = globalThis.__name || function(f){return f}',
-)
-```
-
-Do this ONCE per page before any function-form `page.evaluate(() => ...)` call.
-
 ### DOM virtualization
-See step 4 above. When in doubt, measure counts across scrolls before writing the extractor. For Twitter/X specifically: incremental scroll by `0.9 × innerHeight`, 800ms settle, dedup by `article > time > a[href]`.
+See step 4 above. When in doubt, measure counts across scrolls in the REPL before writing the workflow. For Twitter/X specifically: incremental scroll by `0.9 × innerHeight`, 800ms settle, dedup by `article > time > a[href]`. In the committed workflow, drive the scroll via `page.act('scroll to the bottom of the timeline')` or `page.unsafe().v3Page.evaluate('window.scrollBy(0, innerHeight)')` (legitimate escape-hatch use — it's a side-effect-only imperative call, not a scraper).
 
-### Stagehand's evaluate vs playwriter's executor
-Within the playwriter REPL (`playwriter -s $SID -e '...'`), you can freely use arrow functions — playwriter's VM doesn't have the `__name` issue. Inside a `browser-cli run` script, you need the stub. Don't assume "it worked in the REPL" implies "it works in the script."
+### When (and how) to use `page.unsafe()` / `browser.unsafe()`
 
-Prefer **string expressions** for side-effect-only calls (`page.evaluate('window.scrollBy(0, innerHeight)')`) — they avoid the stub question entirely.
+The wrapper intentionally hides raw Stagehand / Playwright surface. The
+escape hatch exists for features the wrapper hasn't re-exported yet —
+not for scraping.
+
+**Legitimate uses:**
+
+- `page.on('download', …)` — handling a binary download. Wrap the raw page listener and register teardown via `browser.onCleanup(fn)`.
+- `context.addCookies(...)` — seeding auth state from a saved file (`browser.unsafe().stagehand.context.addCookies(...)`).
+- `context.setExtraHTTPHeaders(...)` / CDP target features not yet on the wrapper.
+- Side-effect-only imperative calls like `window.scrollBy(...)` or `window.focus()` — pass the code as a **string** to `evaluate`, not a function, so there's no scraping surface.
+
+**Illegitimate uses — if you catch yourself doing one of these, back up:**
+
+- `page.unsafe().v3Page.evaluate(() => document.querySelector(...))` — this is the exact pattern we built the wrapper to prevent. Rewrite as `page.extract(instruction, schema)` or `page.observe(instruction)`.
+- Re-importing `@browserbasehq/stagehand` at the top of a workflow. There is no legitimate reason; if something's missing from `browser.unsafe().stagehand`, file an issue against the wrapper.
+
+**What happens when you use it:**
+
+- First call per page prints a one-line `WARN: page.unsafe() called — you are bypassing the browser wrapper …` to stderr, citing `page.extract / observe / act` as the resilient alternative. The warning is intentional: it makes misuse visible in CI logs, cron output, and `browser-cli sync` diffs.
+- Lifecycle cleanup (CDP detach, page close, process-exit safeClose) still runs — you do not lose the memory-leak guarantees by using the hatch. But the fragility guarantee (cache + self-heal) is on you.
 
 ### Cleanup behavior (runner)
-The runner closes:
-- Pages the script opened via `context.newPage()`
-- Tabs that were `about:blank` before the run AND still `about:blank` after (these are Stagehand's init-created blanks)
+The runner (via `withBrowser`) handles cleanup on **every** exit path —
+normal return, thrown error, SIGINT/SIGTERM/SIGHUP, uncaught exception,
+unhandled rejection. The sequence is:
 
-The runner does NOT touch the user's real navigated tabs.
+1. Workflow-registered cleanup hooks (`browser.onCleanup(fn)`) run first, in LIFO order, while pages are still open.
+2. Pages the script opened via `browser.newPage()` get closed. Pre-existing tabs are left alone unless they were `about:blank` before the run AND still `about:blank` after (Stagehand init-created blanks).
+3. Two-phase Stagehand shutdown: graceful `stagehand.close()` (3s) → forced `close({ force: true })` (2s) → raw WebSocket `terminate()` as last resort. This is what reclaims the CDP session in Chrome and avoids the renderer-memory leak that motivated the wrapper.
+
+The runner does NOT touch the user's real navigated tabs. If Stagehand
+was never initialized (Path A / Layer 1 workflows that never called
+`browser.newPage()`), steps 2–3 are skipped entirely — there's nothing
+to clean up.
 
 ### Concurrent runs
 Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process, so `browser-cli run ... & browser-cli run ... & wait` works. Two concurrent workflows that mutate the **same** page or cookies can still race — one workflow per tab is the safe pattern.
@@ -455,7 +529,7 @@ Current MVP prints pretty JSON only. Multiple output formats (`table`/`csv`/`md`
 ### LLM-driven fallback (roadmap, not yet implemented)
 Three layers are on the roadmap but not wired: selector self-heal surfacing into the runner's error channel, request-schema drift detection, and full workflow rewrite with auto-versioning. The underlying Stagehand `selfHeal` already runs inside `act()`.
 
-The new network helpers (`captureResponses` / `waitForJsonResponse` / `pageFetch`) are the foundation for L2 (request-schema drift): once a workflow extracts from a typed JSON shape, "the API moved a field" is a clean signal the runner can detect (zod parse failure on the response) and feed back to the LLM for re-mapping. The DOM-extraction path can't give us this without a brittle "did the page render fewer items than usual?" heuristic.
+The Layer 2 network surface (`page.captureResponses` / `page.waitForJsonResponse` / `page.fetch`) is the foundation for L2 (request-schema drift): once a workflow extracts from a typed JSON shape, "the API moved a field" is a clean signal the runner can detect (zod parse failure on the response) and feed back to the LLM for re-mapping. The DOM-extraction path can't give us this without a brittle "did the page render fewer items than usual?" heuristic.
 
 ## Environment
 
@@ -514,18 +588,18 @@ Never throws — failure logs a warning and resolves. Safe to call without a try
 
 ```ts
 import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
+import type { Browser } from '@browserclijs/browser-cli'
 import { notify } from '@browserclijs/browser-cli'
 
 export const schema = z.object({ /* … */ })
 
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
+export async function run(browser: Browser, args: z.infer<typeof schema>) {
+  const page = await browser.newPage()
   await page.goto('https://example.com/profile', { waitUntil: 'domcontentloaded' })
 
   // Detect login-required redirects or sign-in selectors.
   const needsLogin = /\/login|\/signin/.test(page.url())
-    || await page.locator('input[name="password"]').count() > 0
+    || (await page.count('input[name="password"]')) > 0
   if (needsLogin) {
     await notify('telegram-me', {
       title: 'example-scraper: login expired',
