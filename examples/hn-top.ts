@@ -1,30 +1,37 @@
 import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
+import type { Browser } from '@browserclijs/browser-cli'
 
-/** Fetch top N stories from the Hacker News front page. */
+/**
+ * Fetch top N stories from the Hacker News front page.
+ *
+ * Layer 3 (DOM) example — Hacker News has no public JSON endpoint for
+ * its ranked front page, so the resilient path is `page.extract` with
+ * a Zod schema. Stagehand caches the resolved selectors per (URL,
+ * instruction) pair and self-heals if HN tweaks `tr.athing` or `.score`
+ * tomorrow. Hand-rolled `document.querySelectorAll` would just break.
+ */
 export const schema = z.object({
   limit: z.number().int().positive().max(30).default(5),
 })
 
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
+export async function run(browser: Browser, args: z.infer<typeof schema>) {
+  const page = await browser.newPage()
   await page.goto('https://news.ycombinator.com/', { waitUntil: 'domcontentloaded' })
 
-  return await page.evaluate((limit) => {
-    const rows = Array.from(document.querySelectorAll('tr.athing')).slice(0, limit)
-    return rows.map((row) => {
-      const link = row.querySelector('.titleline a') as HTMLAnchorElement | null
-      const rankEl = row.querySelector('.rank')
-      const subtextRow = row.nextElementSibling
-      const scoreEl = subtextRow?.querySelector('.score')
-      const userEl = subtextRow?.querySelector('.hnuser')
-      return {
-        rank: rankEl?.textContent?.replace(/\.$/, '').trim() ?? null,
-        title: link?.textContent?.trim() ?? null,
-        url: link?.href ?? null,
-        score: scoreEl?.textContent?.trim() ?? null,
-        user: userEl?.textContent?.trim() ?? null,
-      }
-    })
-  }, args.limit)
+  const result = await page.extract(
+    `extract the top ${args.limit} stories from the Hacker News front page in the order they appear; for each story return rank, title, url, score, and user`,
+    z.object({
+      stories: z.array(
+        z.object({
+          rank: z.string().nullable(),
+          title: z.string().nullable(),
+          url: z.string().nullable(),
+          score: z.string().nullable(),
+          user: z.string().nullable(),
+        }),
+      ),
+    }),
+  )
+
+  return result.stories.slice(0, args.limit)
 }

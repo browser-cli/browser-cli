@@ -21,7 +21,7 @@ This skill has four sub-flows. Based on the user's intent, **read ONE of these f
 - Any mention of `~/.browser-cli/workflows/` or `browser-cli run`
 - "notify me if this workflow fails / if login expired" (covered as a notify-on-error extension in `workflow-create.md`)
 
-Workflows are pure functions: input args → JSON output. Stateless. One-shot unless wrapped in a task.
+Workflows are pure functions: input args → JSON output. Stateless. One-shot unless wrapped in a task. They receive a single `Browser` argument from `@browserclijs/browser-cli` — the only sanctioned surface — which hides Stagehand/Playwright internals and enforces the three-layer triage (public-API → network-capture → Stagehand DOM). Raw `page.evaluate` + `document.querySelectorAll` is banned; see `workflow-create.md`.
 
 ## 2. Creating a scheduled task (stateful, recurring)
 

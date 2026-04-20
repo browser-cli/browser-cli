@@ -1,11 +1,8 @@
 import fs from 'node:fs'
-import type { Stagehand } from '@browserbasehq/stagehand'
 import type { ZodSchema, z } from 'zod'
 import { ZodError } from 'zod'
-import { Stagehand as StagehandCtor } from '@browserbasehq/stagehand'
-import { makeStagehandConfig } from './stagehand-config.ts'
+import { withBrowser, type Browser } from './browser.ts'
 import {
-  CACHE_DIR,
   WORKFLOWS_DIR,
   ensureHomeDirs,
   loadDotEnv,
@@ -17,7 +14,7 @@ import { loadTs } from './ts-loader.ts'
 
 export type WorkflowModule<S extends ZodSchema = ZodSchema> = {
   schema: S
-  run: (stagehand: Stagehand, args: z.infer<S>) => Promise<unknown>
+  run: (browser: Browser, args: z.infer<S>) => Promise<unknown>
 }
 
 function unwrapModule(mod: Record<string, unknown>): Record<string, unknown> {
@@ -36,7 +33,7 @@ function assertWorkflowModule(rawMod: Record<string, unknown>, name: string): Wo
     throw new Error(`Workflow "${name}" is missing a Zod \`schema\` export.`)
   }
   if (typeof mod.run !== 'function') {
-    throw new Error(`Workflow "${name}" is missing an async \`run(stagehand, args)\` export.`)
+    throw new Error(`Workflow "${name}" is missing an async \`run(browser, args)\` export.`)
   }
   return mod as unknown as WorkflowModule
 }
@@ -75,22 +72,5 @@ export async function runWorkflow(
     throw err
   }
 
-  const stagehand = new StagehandCtor(await makeStagehandConfig(CACHE_DIR, { cdpUrl: options.cdpUrl }))
-  await stagehand.init()
-
-  const preExisting = new Map<unknown, string>()
-  for (const p of stagehand.context.pages()) preExisting.set(p, p.url())
-
-  try {
-    return await mod.run(stagehand, parsed)
-  } finally {
-    for (const p of stagehand.context.pages()) {
-      const wasPre = preExisting.has(p)
-      const wasBlank = preExisting.get(p) === 'about:blank'
-      const stillBlank = p.url() === 'about:blank'
-      const shouldClose = !wasPre || (wasBlank && stillBlank)
-      if (shouldClose) await p.close().catch(() => {})
-    }
-    await stagehand.close().catch(() => {})
-  }
+  return await withBrowser({ cdpUrl: options.cdpUrl }, (browser) => mod.run(browser, parsed))
 }

@@ -1,3 +1,4 @@
+import { installShutdownHandlers } from './shutdown.ts'
 import { runList } from './commands/list.ts'
 import { runRunCommand } from './commands/run.ts'
 import { runConfig } from './commands/config.ts'
@@ -52,6 +53,7 @@ Environment (resolved in priority order):
 `
 
 async function main(): Promise<void> {
+  installShutdownHandlers()
   const argv = process.argv.slice(2)
   const [cmd, ...rest] = argv
 

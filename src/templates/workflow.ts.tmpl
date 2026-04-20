@@ -1,25 +1,44 @@
 import { z } from 'zod'
-import type { Stagehand } from '@browserbasehq/stagehand'
-// API-first helpers — see SKILL.md "Step 2.5: Capture network traffic" before scraping the DOM.
-// import { waitForJsonResponse, captureResponses, pageFetch } from '@browserclijs/browser-cli'
+import type { Browser } from '@browserclijs/browser-cli'
 
-/** Short one-line description of what this workflow does. */
+/**
+ * Short one-line description of what this workflow does.
+ *
+ * The single argument is a `Browser` from `@browserclijs/browser-cli`.
+ * Workflows MUST NOT import `@browserbasehq/stagehand` or `playwright`
+ * directly — that's what bypasses the lifecycle/cleanup guarantees and
+ * the Stagehand LLM cache that makes scrapers survive markup changes.
+ *
+ * Triage in this priority order:
+ *   1. Public API verified during probe? → still a workflow, but skip the browser.
+ *      Never call `browser.newPage()`; the runner skips Stagehand init entirely.
+ *      Just `fetch(...)` the endpoint directly using Node's global fetch.
+ *   2. Browser needed but the data comes through a JSON endpoint?
+ *      → Layer 2: `page.fetch` / `page.captureResponses` / `page.waitForJsonResponse`.
+ *   3. DOM is the only source? → Layer 3: `page.extract` / `page.act` / `page.observe`.
+ *
+ * Raw `document.querySelectorAll` via `page.unsafe()` is banned — it
+ * breaks the moment the site touches its markup.
+ */
 export const schema = z.object({
   // Describe the args your workflow accepts. Example:
   limit: z.number().int().positive().max(50).default(10),
 })
 
-export async function run(stagehand: Stagehand, args: z.infer<typeof schema>) {
-  const page = await stagehand.context.newPage()
-
-  // -- Preferred: extract from the underlying JSON response --
-  // const { json } = await waitForJsonResponse(page, /\/api\/some-endpoint/)
-  // await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
-  // return (json as { items: { title: string }[] }).items.slice(0, args.limit)
-
-  // -- Fallback: scrape the DOM (markup is more brittle than the API) --
+export async function run(browser: Browser, args: z.infer<typeof schema>) {
+  const page = await browser.newPage()
   await page.goto('https://example.com/', { waitUntil: 'domcontentloaded' })
-  return await page.evaluate((limit) => {
-    return { hello: 'world', limit }
-  }, args.limit)
+
+  // Layer 3 (DOM) — resilient via Stagehand's LLM cache + selfHeal:
+  const items = await page.extract(
+    `find the first ${args.limit} items on the page; return title and url for each`,
+    z.object({
+      items: z.array(z.object({ title: z.string(), url: z.string().url() })),
+    }),
+  )
+  return items.items
+
+  // Layer 2 (preferred when a JSON endpoint exists):
+  // const json = await page.waitForJsonResponse<{ items: { title: string }[] }>(/\/api\/items/)
+  // return json.items.slice(0, args.limit)
 }
