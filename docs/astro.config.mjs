@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: 'https://browser-cli-docs.pages.dev',
+  site: 'https://browser-cli.zerith.app',
   redirects: {
     '/': '/en/',
   },
