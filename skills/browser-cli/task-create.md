@@ -59,7 +59,7 @@ If yes, collect:
 - `rss.itemLink` — which field is the item link (default: `url`)
 - optionally: `rss.itemDescription`, `rss.itemPubDate`, `rss.maxItems`
 
-Feeds are written to `~/.browser-cli/feeds/<task>.xml` as Atom 1.0. User can point any RSS reader at that file:// path or serve it via their own HTTP server.
+Feeds are written under `$(browser-cli home)/feeds/<task>.xml` as Atom 1.0. User can point any RSS reader at that file:// path or serve it via their own HTTP server.
 
 ### Step 5: ask for the cron schedule
 
@@ -80,15 +80,15 @@ Call the interactive scaffolder:
 browser-cli task create <name>
 ```
 
-It prompts for all of the above and writes `~/.browser-cli/tasks/<name>.ts`. You can also hand-write the file directly — the scaffolder is a convenience, not a requirement.
+It prompts for all of the above and writes the task file under your browser-cli home (the CLI resolves the path internally). You can also hand-write the file directly — the scaffolder is a convenience, not a requirement.
 
-**Hand-written task format** (write directly when you have all the details already):
+**Hand-written task format** (write directly when you have all the details already). Resolve the home once (`HOME=$(browser-cli home)`), then Write to `$HOME/tasks/<name>.ts`:
 
 ```ts
 import type { TaskConfig } from '@browserclijs/browser-cli'
 
 export const config: TaskConfig = {
-  workflow: 'hn-top',               // name of workflow in ~/.browser-cli/workflows/
+  workflow: 'hn-top',               // name of a workflow under $(browser-cli home)/workflows/
   args: { limit: 30 },              // passed to workflow's run()
   schedule: '*/30 * * * *',         // cron
   itemKey: 'url',                   // → items mode; remove for snapshot mode
@@ -134,7 +134,7 @@ If not running, remind the user:
 
 ```bash
 browser-cli daemon              # foreground — tie to the terminal
-browser-cli daemon --detach     # background — writes ~/.browser-cli/daemon.pid
+browser-cli daemon --detach     # background — writes daemon.pid under $(browser-cli home)
 ```
 
 For boot-start on macOS, the user can wrap `browser-cli daemon --detach` in a launchd plist; we don't install one automatically in v1.

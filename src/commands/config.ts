@@ -73,7 +73,7 @@ export async function runConfig(argv: string[]): Promise<void> {
         `  Active provider: ${provider}\n` +
         (provider === 'claude-agent-sdk'
           ? `  Note: each LLM call spawns a Claude Code subprocess (~6-10s/call). Make sure \`claude\` is authenticated.\n`
-          : `  Note: LLM_API_KEY is stored in plaintext — keep ~/.browser-cli/.env out of version control.\n`),
+          : `  Note: LLM_API_KEY is stored in plaintext — keep ${ENV_FILE} out of version control.\n`),
     )
   } finally {
     reader.close()

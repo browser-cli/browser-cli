@@ -35,7 +35,7 @@
 
 ## When to load this skill
 
-Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in `~/.browser-cli/workflows/`. Concrete triggers:
+Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in their browser-cli home (`workflows/` subdir — run `browser-cli home` to resolve the absolute path). Concrete triggers:
 
 - **Create** — "写一个抓 X 的脚本" / "scrape X" / "get Y from Z site" / "监控 X 的 Y" / any new automation ask
 - **Fix** — "这个 workflow 报错了" / "selectors broke" / "login expired" / "zod parse failed" / any `browser-cli run` failure. See the **Fixing an existing workflow** procedure under **Known gotchas** below.
@@ -49,19 +49,16 @@ A workflow-folder-based browser automation system running on the user's real Chr
 
 - **playwriter** (Chrome extension + CDP relay at `ws://127.0.0.1:19988`) — provides the Chrome attach
 - **`Browser` wrapper** (`@browserclijs/browser-cli`) — the single API workflows import. Wraps Stagehand v3's `extract` / `act` / `observe` for DOM resilience, re-exports `fetch` / `captureResponses` / `waitForJsonResponse` for the network path, and owns lifecycle + CDP cleanup so a crash or SIGINT can't leak a renderer session.
-- LLM gateway via `~/.browser-cli/.env` (OpenAI-compatible, tool-calling supported)
+- LLM gateway via the env file under your browser-cli home (configured via `browser-cli config`, OpenAI-compatible, tool-calling supported)
 
 ## Directory layout
 
-```
-~/.browser-cli/
-├── workflows/                workflow scripts live here (recursed)
-│   ├── <domain>/<name>.ts    actual workflows, grouped by target site (see below)
-│   └── test/                 exploratory and regression scripts
-├── .cache/                   Stagehand action cache (SHA256-keyed JSON)
-├── .env                      LLM_API_KEY / LLM_BASE_URL / LLM_MODEL (gitignored)
-└── node_modules/             auto-symlinked to the installed package on first `run`
-```
+Your browser-cli home (resolve via `browser-cli home`) contains:
+
+- `workflows/` — workflow scripts, recursed. Grouped into `<domain>/<name>.ts` subfolders (see naming convention below). A `test/` subfolder is conventional for exploratory / regression scripts.
+- `.cache/` — Stagehand action cache (SHA256-keyed JSON)
+- `.env` — `LLM_API_KEY` / `LLM_BASE_URL` / `LLM_MODEL` (gitignored; manage via `browser-cli config`)
+- `node_modules/` — auto-symlinked to the installed package on first `run`
 
 The `browser-cli` binary itself comes from `npm install -g @browserclijs/browser-cli` and is on PATH.
 
@@ -69,17 +66,16 @@ The `browser-cli` binary itself comes from `npm install -g @browserclijs/browser
 
 One folder per target **domain**, using the **full domain with dots replaced by `~`**. Rationale: short aliases like `x/`, `hn/`, `google/` collide across TLDs (`example.com` vs `example.org`). The domain is the natural unique key.
 
-Examples:
+Examples (under `$(browser-cli home)/workflows/`):
 ```
-~/.browser-cli/workflows/
-├── news~ycombinator~com/
-│   └── top.ts
-├── x~com/
-│   ├── profile-tweets.ts
-│   └── my-timeline.ts
-├── github~com/
-│   └── star.ts
-└── mail~google~com/       ← subdomains get their own folder; no collision with google~com
+news~ycombinator~com/
+└── top.ts
+x~com/
+├── profile-tweets.ts
+└── my-timeline.ts
+github~com/
+└── star.ts
+mail~google~com/       ← subdomains get their own folder; no collision with google~com
 ```
 
 Invocation mirrors the folder name. Three arg forms are auto-detected (pick whichever is terser):
@@ -175,7 +171,7 @@ export async function run(browser: Browser, args: z.infer<typeof schema>) {
 - `page.fetch<T>(url, init?)` — fire a request from the page's JS context (inherits cookies / same-origin auth).
 
 The runner (via `withBrowser`) handles:
-- Loading `~/.browser-cli/.env` via `process.loadEnvFile`
+- Loading the env file under the browser-cli home via `process.loadEnvFile`
 - Stagehand init with a **unique** `cdpUrl: ws://127.0.0.1:19988/cdp/bc-<pid>-<ts>` (relay rejects duplicate clientIds with code 4004)
 - Closing pages the script opened + orphan about:blank tabs from Stagehand's init
 - Two-phase Stagehand shutdown (graceful → forced WebSocket terminate) on **every** exit path including SIGINT/SIGTERM/uncaught throws
@@ -241,7 +237,7 @@ If there's a plausible hit (same domain, overlapping purpose), STOP and ask the 
 
 - **Reuse** — run the existing workflow with their args (`browser-cli describe <name>` to show params, then `browser-cli run <name> ...`). Done; no new file.
 - **Modify** — open the existing file and edit in place. Jump to the **Fixing an existing workflow** procedure under **Known gotchas** (same pattern applies to feature tweaks, not just bug fixes).
-- **Fork a subscribed one** — if the hit is under `~/.browser-cli-subs/<sub>/`, run `browser-cli sub copy <sub>/<name>` to fork it into the user's own `workflows/` before editing. See `./sub-manage.md`.
+- **Fork a subscribed one** — if the hit is under the subs directory (see `browser-cli subs-home`), run `browser-cli sub copy <sub>/<name>` to fork it into the user's own `workflows/` before editing. See `./sub-manage.md`.
 - **New one anyway** — only if the user confirms the existing workflow genuinely doesn't cover the goal (different auth, different endpoint, different output shape). Pick a distinct filename — don't overwrite.
 
 Only proceed to step 1 after the user has chosen "new one anyway" or no hit exists. Silent duplicates under the same domain folder are the failure mode to avoid.
@@ -421,12 +417,12 @@ Interpret:
 
 ### 6. Commit to a workflow
 
-Drop the verified logic into `~/.browser-cli/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
+Resolve the home once (`HOME=$(browser-cli home)`), then drop the verified logic into `$HOME/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Never expand `~/.browser-cli` yourself — `$BROWSER_CLI_HOME` may point somewhere else. Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
 
 ### 7. Run via `browser-cli` and verify — TWICE
 
 ```bash
-browser-cli run <domain>/<name> '<args>'     # first run: populates Stagehand cache in ~/.browser-cli/.cache/
+browser-cli run <domain>/<name> '<args>'     # first run: populates Stagehand cache under $(browser-cli home)/.cache/
 browser-cli run <domain>/<name> '<args>'     # second run: should be noticeably faster, hitting cached observe/act
 ```
 
@@ -434,7 +430,7 @@ What to check:
 
 1. **First run succeeds** and the output JSON matches what the user asked for. Diff against a small golden sample if the data is deterministic.
 2. **Second run is faster** and still returns the same shape. If it doesn't, either the page is non-deterministic (pagination, personalization) or the cache key is drifting — note it and move on; `selfHeal` will handle minor drift later.
-3. **Cache files exist** under `~/.browser-cli/.cache/` after the first run (only when Path C actually used `observe` / `act` / `extract` — Path A/B workflows don't populate this cache). If you expected cache entries and none appear, the LLM gateway probably doesn't support `response_format: json_schema` — see **Known gotchas**.
+3. **Cache files exist** under `$(browser-cli home)/.cache/` after the first run (only when Path C actually used `observe` / `act` / `extract` — Path A/B workflows don't populate this cache). If you expected cache entries and none appear, the LLM gateway probably doesn't support `response_format: json_schema` — see **Known gotchas**.
 
 If the first run fails when the REPL step succeeded, see **Known gotchas** below.
 
@@ -471,7 +467,7 @@ Trigger: user says "this workflow broke" / "zod parse failed" / "selectors 404'd
    - `zod parse failed` on a captured JSON response (Path B) → the site's API changed. Capture the response again in a REPL (step 3) and diff it against the workflow's type; update the type or the pick.
    - `locator … not found` / `timeout waiting for …` → a form-fill selector passed to `page.click` / `page.fill` / `page.waitForSelector` moved. Either update it, or — if this lookup used to be a DOM scrape via `page.unsafe()` — migrate to `page.extract` / `page.observe` so the next regression self-heals.
 2. Reproduce in a playwriter REPL (steps 1–3 of the step-by-step flow) against the same page state the cron run sees.
-3. Clear `~/.browser-cli/.cache/` entries for the affected instruction before the fix re-run, so you don't race against stale cache entries while iterating.
+3. Clear cache entries for the affected instruction under `$(browser-cli home)/.cache/` before the fix re-run, so you don't race against stale cache entries while iterating.
 4. Re-verify with `browser-cli run` twice (step 7) before `browser-cli sync`.
 
 ### DOM virtualization
@@ -518,7 +514,7 @@ to clean up.
 Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process, so `browser-cli run ... & browser-cli run ... & wait` works. Two concurrent workflows that mutate the **same** page or cookies can still race — one workflow per tab is the safe pattern.
 
 ### Stagehand URL drift (minor)
-`stagehand.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `~/.browser-cli/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
+`stagehand.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `$(browser-cli home)/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
 
 ### LLM gateway must support `response_format: json_schema`
 Stagehand's `act()`/`extract()` rely on structured output via OpenAI's json_schema mode. If the gateway ignores it and returns prose, you'll see `AI_NoObjectGeneratedError`. The user's `aigate` gateway already supports this as of 2026-04-18.
@@ -533,7 +529,7 @@ The Layer 2 network surface (`page.captureResponses` / `page.waitForJsonResponse
 
 ## Environment
 
-`~/.browser-cli/.env` (gitignored). Run `browser-cli config` to set it up interactively, or hand-edit.
+The env file lives under your browser-cli home (gitignored). Run `browser-cli config` to set it up interactively, or hand-edit after resolving the path with `browser-cli home`.
 
 Two main providers:
 

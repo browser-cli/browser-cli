@@ -71,7 +71,7 @@ If the user declines the test, note explicitly: "Skipping test — channel is sa
 If the test fails (apprise error OR user didn't receive it):
 - Check the user's error output. `apprise` usually prints a specific reason (auth failed, unreachable host, invalid format).
 - Common causes: wrong bot token, chat ID off by one, expired Slack webhook, SMTP auth/TLS misconfig.
-- Let them edit with `browser-cli notify rm <name>` + re-add, or directly hand-edit `~/.browser-cli/db.sqlite` if they know SQL.
+- Let them edit with `browser-cli notify rm <name>` + re-add, or directly hand-edit `db.sqlite` under the browser-cli home (see `browser-cli home`) if they know SQL.
 
 ### Step 5: confirm and (if returning from another flow) resume
 

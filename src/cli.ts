@@ -9,6 +9,7 @@ import { runDaemon } from './commands/daemon.ts'
 import { runInit } from './commands/init.ts'
 import { runSync } from './commands/sync.ts'
 import { runSub } from './commands/sub.ts'
+import { runHome, runSubsHome } from './commands/home.ts'
 import { checkForUpdate } from './versionCheck.ts'
 
 const USAGE = `Usage:
@@ -23,6 +24,8 @@ const USAGE = `Usage:
   browser-cli init                                      Re-sync ~/.browser-cli layout + git repo, print status
   browser-cli sync                                      Review uncommitted changes in ~/.browser-cli and commit
   browser-cli sub <subcommand>                          Manage subscribed repos (add/list/update/remove/copy)
+  browser-cli home                                      Print the resolved home directory (respects $BROWSER_CLI_HOME)
+  browser-cli subs-home                                 Print the resolved subscriptions directory (respects $BROWSER_CLI_SUBS_HOME)
   browser-cli --help                                    Show this message
 
 \`list\` / \`task list\` accept an optional site filter — case-insensitive substring
@@ -96,6 +99,12 @@ async function main(): Promise<void> {
       return
     case 'sub':
       await runSub(rest)
+      return
+    case 'home':
+      await runHome(rest)
+      return
+    case 'subs-home':
+      await runSubsHome(rest)
       return
     default:
       process.stderr.write(`Unknown command: ${cmd}\n\n${USAGE}`)

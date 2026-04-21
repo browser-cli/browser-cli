@@ -40,7 +40,7 @@ const USAGE = `Usage:
   browser-cli task disable <name>            Disable scheduling
   browser-cli task rm <name>                 Remove the task file and its db row
 
-Tasks are .ts files in ~/.browser-cli/tasks/ that export a \`config\` object.
+Tasks are .ts files in ${TASKS_DIR} that export a \`config\` object.
 `
 
 export async function runTask(argv: string[]): Promise<void> {

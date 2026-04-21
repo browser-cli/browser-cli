@@ -120,7 +120,7 @@ export async function promptAndCommit(trigger: string): Promise<void> {
 
   if (!stdout.isTTY || !stdin.isTTY) {
     process.stderr.write(
-      `uncommitted changes in ~/.browser-cli — run 'browser-cli sync' to commit\n`,
+      `uncommitted changes in ${HOME_DIR} — run 'browser-cli sync' to commit\n`,
     )
     return
   }

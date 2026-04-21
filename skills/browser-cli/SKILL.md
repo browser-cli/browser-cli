@@ -1,12 +1,21 @@
 ---
 name: browser-cli
-description: "Use when the user wants to create, run, or debug browser automations stored in ~/.browser-cli/, schedule them as tasks (RSS feeds, page-change monitoring, new-item notifications), or configure notification channels. Triggers on references to ~/.browser-cli/, `browser-cli run`, `browser-cli task`, scheduled-scraping asks like \"每小时抓 X\", change-detection asks like \"网页 X 有变化就通知我\", RSS-feed asks, or notification-channel setup."
+description: "Use when the user wants to create, run, or debug browser automations stored in their browser-cli home, schedule them as tasks (RSS feeds, page-change monitoring, new-item notifications), or configure notification channels. Triggers on references to ~/.browser-cli/, `browser-cli run`, `browser-cli task`, scheduled-scraping asks like \"每小时抓 X\", change-detection asks like \"网页 X 有变化就通知我\", RSS-feed asks, or notification-channel setup."
 version: 2.0.0
 ---
 
 # browser-cli
 
 A CLI and SDK for running browser automations on the user's real logged-in Chrome. Tasks layered on top add scheduling, stateful diffing, RSS feeds, and apprise-backed notifications.
+
+## Resolving the home directory
+  ```bash
+  HOME=$(browser-cli home)              # absolute path to the home dir, one line
+  SUBS=$(browser-cli subs-home)         # absolute path to the subs dir
+  ```
+  Then Write to `$HOME/workflows/<name>.ts`, `$HOME/tasks/<name>.ts`, etc. Never expand `~/.browser-cli` yourself — the env var may point somewhere else (tests, multi-profile setups, CI).
+- Places in this skill that mention `~/.browser-cli/...` in prose are kept as user-recognizable shorthand (`SKILL.md`'s trigger bullets echo user phrasing). **Always substitute the resolved home before acting.**
+## Sub-flows
 
 This skill has four sub-flows. Based on the user's intent, **read ONE of these files and follow its instructions**:
 
@@ -63,7 +72,7 @@ Channels are named apprise URLs stored in sqlite. Once saved, refer to them by n
 - "这个 sub 的脚本报错了我想改" / "fork this subscribed workflow so I can edit"
 - Any mention of `browser-cli sub`, `~/.browser-cli-subs/`, or `subs.json`
 
-Subscriptions are additional git repos cloned to `~/.browser-cli-subs/<sub-name>/` containing shared `workflows/` and/or `tasks/`. They are **read-only** — to modify a subscribed script, `sub copy` it into the user's own `~/.browser-cli/` first.
+Subscriptions are additional git repos cloned under the subs directory (`browser-cli subs-home`) containing shared `workflows/` and/or `tasks/`. They are **read-only** — to modify a subscribed script, `sub copy` it into the user's own home first.
 
 ## Cross-flow orchestration
 
@@ -74,7 +83,7 @@ user: "每小时抓 HN 有新条目就推 Telegram"
   → SKILL.md → task-create.md
     → checks workflows → hn-top missing → load workflow-create.md → return
     → checks channels → none saved → load channel-create.md → return
-    → writes ~/.browser-cli/tasks/hn-rss.ts
+    → writes the task file via `browser-cli task create hn-rss` (CLI resolves path)
     → reminds user: start browser-cli daemon
 ```
 
@@ -116,7 +125,7 @@ browser-cli sub copy <sub>/<wf-or-task>          fork a subscribed file into you
 
 ## Post-write commits
 
-`~/.browser-cli/` is a git repo (auto-initialized on first use). Whenever you write or edit files there — `workflows/*.ts`, `tasks/*.ts`, `subs.json` — end the flow by calling:
+The browser-cli home is a git repo (auto-initialized on first use). Whenever you write or edit files there — `workflows/*.ts`, `tasks/*.ts`, `subs.json` — end the flow by calling:
 
 ```bash
 browser-cli sync
@@ -126,22 +135,6 @@ This prints a summary of uncommitted changes and prompts the user `[y]es / [n]o 
 
 ## Filesystem layout
 
-```
-~/.browser-cli/                ← git repo (tracked; pushable to a remote)
-├── workflows/<name>.ts        pure functions (schema + run)       [tracked]
-├── tasks/<name>.ts            scheduled + stateful wrappers       [tracked]
-├── subs.json                  registry of subscribed repos        [tracked]
-├── .gitignore                 excludes state/logs/credentials     [tracked]
-├── feeds/<task>.xml           RSS feeds emitted by items-mode tasks [ignored]
-├── db.sqlite                  tasks / items / snapshots / runs / channels [ignored]
-├── daemon.pid                 pidfile for detached daemon         [ignored]
-├── daemon.log                 detached-daemon stdout/stderr       [ignored]
-├── .cache/                    Stagehand action cache              [ignored]
-├── .env                       LLM config                          [ignored]
-└── node_modules/              auto-symlinked                      [ignored]
+The home directory (`browser-cli home`) contains — **tracked in git** — `workflows/<name>.ts` (pure functions: schema + run), `tasks/<name>.ts` (scheduled + stateful wrappers), `subs.json` (registry of subscribed repos), and `.gitignore`. It also contains — **ignored** — `feeds/<task>.xml` (RSS feeds from items-mode tasks), `db.sqlite` (tasks / items / snapshots / runs / channels), `daemon.pid` + `daemon.log` (detached daemon state), `.cache/` (Stagehand action cache), `.env` (LLM config), and `node_modules/` (auto-symlinked on first run).
 
-~/.browser-cli-subs/           ← NOT tracked by the user's repo
-└── <sub-name>/                each is its own git clone, managed by `browser-cli sub`
-    ├── workflows/             read-only — `sub copy` to fork
-    └── tasks/                 read-only — `sub copy` to enable (copies into user's tasks/)
-```
+The subs directory (`browser-cli subs-home`) is **not** tracked by the user's repo. Each entry `<sub-name>/` is its own git clone managed by `browser-cli sub` and contains read-only `workflows/` and `tasks/`. Fork one into the user's home via `sub copy` before editing.

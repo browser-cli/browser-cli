@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { spawn } from 'node:child_process'
-import { DAEMON_PID_PATH, DAEMON_LOG_PATH, ensureHomeDirs } from '../paths.ts'
+import { DAEMON_PID_PATH, DAEMON_LOG_PATH, TASKS_DIR, ensureHomeDirs } from '../paths.ts'
 import { startDaemon } from '../daemon/index.ts'
 
 const USAGE = `Usage:
@@ -9,7 +9,7 @@ const USAGE = `Usage:
   browser-cli daemon stop               Stop a detached daemon via pidfile
 
 Tick interval defaults to 15s. While running, the daemon watches
-~/.browser-cli/tasks/ and reconciles changes into sqlite on the fly.
+${TASKS_DIR} and reconciles changes into sqlite on the fly.
 `
 
 export async function runDaemon(argv: string[]): Promise<void> {
