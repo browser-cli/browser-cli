@@ -12,7 +12,8 @@ async function resolveLlm(): Promise<LlmPart> {
 
   if (LLM_PROVIDER === 'claude-agent-sdk') {
     const { ClaudeAgentSdkLanguageModel } = await import('./llm/claude-agent-sdk-adapter.ts')
-    const model = new ClaudeAgentSdkLanguageModel({ modelId: LLM_MODEL })
+    const maxTurns = process.env.LLM_MAX_TURNS ? parseInt(process.env.LLM_MAX_TURNS, 10) : undefined
+    const model = new ClaudeAgentSdkLanguageModel({ modelId: LLM_MODEL, maxTurns })
     return { llmClient: new AISdkClient({ model }) }
   }
 
