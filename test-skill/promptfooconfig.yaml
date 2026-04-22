@@ -1,0 +1,114 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+
+description: "browser-cli skill — 3-layer behavior eval (L1 public API, L2 network sniff, L3 DOM)"
+
+providers:
+  - id: anthropic:claude-agent-sdk
+    config:
+      working_dir: ./src
+      apiKeyRequired: false
+      permission_mode: bypassPermissions
+      setting_sources: ["project"]
+      append_allowed_tools: ["Skill", "Read", "Write", "Edit", "Bash"]
+      allow_dangerously_skip_permissions: true
+
+extensions:
+  - file://./extensions.js:default
+
+prompts:
+  - "{{prompt}}"
+
+tests:
+  # ─────────────────────────────────────────────────────────────
+  # L1 — public JSON API, no browser needed (HackerNews Firebase)
+  # ─────────────────────────────────────────────────────────────
+  - description: "L1 — public API (HackerNews top 5)"
+    vars:
+      prompt: "browser-cli 帮我写一个workflow，获取hackernews 前5条新闻。写完后运行一次，把输出贴在回复里。"
+    assert:
+      - type: skill-used
+        value: browser-cli
+
+      - type: javascript
+        value: |
+          const toolCalls = context.providerResponse?.metadata?.toolCalls || [];
+          const writes = toolCalls.filter(
+            (t) => t.name === 'Write' && /workflows\/.+\.ts$/.test(t.input?.file_path || '')
+          );
+          if (writes.length === 0) return { pass: false, score: 0, reason: 'no workflow file written' };
+          const content = writes.map((w) => w.input?.content || '').join('\n');
+          const hitsPublicApi = /hacker-news\.firebaseio\.com|hn\.algolia\.com|api\.hnpwa\.com/.test(content);
+          const leaksToDom = /page\.extract|page\.observe|stagehand|\.athing|document\.querySelector/i.test(content);
+          if (!hitsPublicApi) return { pass: false, score: 0, reason: 'workflow did not hit a public HN JSON endpoint' };
+          if (leaksToDom) return { pass: false, score: 0, reason: 'workflow dropped to DOM layer (L3) on an L1 task' };
+          return { pass: true, score: 1, reason: 'L1 public-API path confirmed' };
+
+  # ─────────────────────────────────────────────────────────────
+  # L2 — network-sniff layer (quotes.toscrape.com/scroll — SPA
+  # that fetches /api/quotes?page=N as JSON via XHR)
+  # ─────────────────────────────────────────────────────────────
+  - description: "L2 — network sniff (quotes.toscrape.com/scroll)"
+    vars:
+      prompt: "browser-cli 帮我写一个 workflow，从 https://quotes.toscrape.com/scroll 获取前 10 条名言。写完后运行一次，把输出贴在回复里。"
+    assert:
+      - type: skill-used
+        value: browser-cli
+
+      - type: javascript
+        value: |
+          const toolCalls = context.providerResponse?.metadata?.toolCalls || [];
+
+          const writes = toolCalls.filter(
+            (t) => t.name === 'Write' && /workflows\/.+\.ts$/.test(t.input?.file_path || '')
+          );
+          if (writes.length === 0) return { pass: false, score: 0, reason: 'no workflow file written' };
+          const content = writes.map((w) => w.input?.content || '').join('\n');
+
+          const bashOutputs = toolCalls
+            .filter((t) => t.name === 'Bash' && /browser-cli run/.test(t.input?.command || ''))
+            .map((t) => typeof t.output === 'string' ? t.output : JSON.stringify(t.output || ''))
+            .join('\n');
+          const haystack = [output, bashOutputs].join('\n');
+
+          const hitsEndpoint = /\/api\/quotes/.test(content);
+          const leaksToDom = /page\.extract\(|page\.observe\(|document\.querySelector/i.test(content);
+          const ranAndSawEinstein = /Einstein/.test(haystack);
+          const ranWorkflow = toolCalls.some(
+            (t) => t.name === 'Bash' && /browser-cli run\s/.test(t.input?.command || '')
+          );
+
+          if (!hitsEndpoint) return { pass: false, score: 0, reason: 'workflow did not call /api/quotes — agent failed to discover the JSON endpoint' };
+          if (leaksToDom) return { pass: false, score: 0, reason: 'workflow used DOM-layer extraction instead of the discovered JSON API (L2 → L3 regression)' };
+          if (!ranWorkflow) return { pass: false, score: 0, reason: 'agent did not run `browser-cli run` — no runtime verification possible' };
+          if (!ranAndSawEinstein) return { pass: false, score: 0, reason: '`Einstein` not found in run output — the workflow ran but produced wrong data' };
+          return { pass: true, score: 1, reason: 'L2 JSON-endpoint path confirmed and run returned expected data' };
+
+  # ─────────────────────────────────────────────────────────────
+  # L3 — DOM-only layer (books.toscrape.com — pure HTML, no JSON)
+  # ─────────────────────────────────────────────────────────────
+  - description: "L3 — DOM only (books.toscrape.com top 5 books)"
+    vars:
+      prompt: "browser-cli 帮我写一个 workflow，从 https://books.toscrape.com 获取首页前 5 本书的标题和价格。写完后运行一次，把输出贴在回复里。"
+    assert:
+      - type: skill-used
+        value: browser-cli
+
+      - type: contains
+        value: "A Light in the Attic"
+
+      - type: contains
+        value: "£"
+
+      - type: javascript
+        value: |
+          const toolCalls = context.providerResponse?.metadata?.toolCalls || [];
+          const writes = toolCalls.filter(
+            (t) => t.name === 'Write' && /workflows\/.+\.ts$/.test(t.input?.file_path || '')
+          );
+          if (writes.length === 0) return { pass: false, score: 0, reason: 'no workflow file written' };
+          const content = writes.map((w) => w.input?.content || '').join('\n');
+          const usesDomApi = /page\.extract|page\.observe|page\.act/.test(content);
+          const bannedEvaluate = /page\.evaluate\s*\([^)]*document\.querySelector/is.test(content);
+          if (!usesDomApi) return { pass: false, score: 0, reason: 'workflow did not use sanctioned Browser DOM API (page.extract/observe/act)' };
+          if (bannedEvaluate) return { pass: false, score: 0, reason: 'workflow used banned raw page.evaluate + document.querySelector pattern' };
+          return { pass: true, score: 1, reason: 'L3 DOM-layer path confirmed using sanctioned wrapper API' };

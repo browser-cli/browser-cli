@@ -1,0 +1,8 @@
+# Ephemeral eval artifacts managed by extensions.js
+src/.claude/skills/
+browser-cli/
+
+# Promptfoo local output
+.promptfoo/
+promptfoo_output/
+output.json
