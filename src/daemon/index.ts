@@ -35,34 +35,49 @@ async function reconcile(): Promise<void> {
   }
 }
 
-async function tick(): Promise<void> {
-  const due = findDue()
+export type TickDeps = {
+  findDue: typeof findDue
+  run: (name: string) => Promise<void>
+  log: (msg: string) => void
+}
+
+/**
+ * Scan for due tasks and fire them. Synchronous on purpose: a single task that
+ * hangs (or that is awaited in a broken state) must NEVER block subsequent
+ * ticks. Per-task dedup is handled by the `running` set.
+ */
+export function tick(deps: TickDeps = defaultDeps, runningSet: Set<string> = running): void {
+  const due = deps.findDue()
   if (due.length === 0) return
 
-  await Promise.all(
-    due.map(async (d) => {
-      if (running.has(d.row.name)) {
-        log(`skip ${d.row.name} — previous run still in progress`)
-        return
-      }
-      running.add(d.row.name)
-      try {
-        const task = await loadTask(d.row.name)
-        log(`run ${d.row.name} (mode=${task.config.itemKey ? 'items' : 'snapshot'})`)
-        const res = await executeTask(task)
-        if (res.status === 'ok') {
-          log(`ok ${d.row.name} — ${res.mode}, ${res.newItemsCount} ${res.mode === 'items' ? 'new items' : 'change'}`)
-        } else {
-          logErr(`error ${d.row.name} — ${res.error}`)
-        }
-      } catch (err) {
-        logErr(`exec ${d.row.name}: ${(err as Error).message}`)
-      } finally {
-        running.delete(d.row.name)
-      }
-    }),
-  )
+  for (const d of due) {
+    if (runningSet.has(d.row.name)) {
+      deps.log(`skip ${d.row.name} — previous run still in progress`)
+      continue
+    }
+    runningSet.add(d.row.name)
+    // Fire-and-forget. If deps.run hangs forever, only this task's slot
+    // remains occupied — the scheduler keeps ticking.
+    void deps.run(d.row.name).finally(() => runningSet.delete(d.row.name))
+  }
 }
+
+async function runTask(name: string): Promise<void> {
+  try {
+    const task = await loadTask(name)
+    log(`run ${name} (mode=${task.config.itemKey ? 'items' : 'snapshot'})`)
+    const res = await executeTask(task)
+    if (res.status === 'ok') {
+      log(`ok ${name} — ${res.mode}, ${res.newItemsCount} ${res.mode === 'items' ? 'new items' : 'change'}`)
+    } else {
+      logErr(`error ${name} — ${res.error}`)
+    }
+  } catch (err) {
+    logErr(`exec ${name}: ${(err as Error).message}`)
+  }
+}
+
+const defaultDeps: TickDeps = { findDue, run: runTask, log }
 
 export async function startDaemon(opts: DaemonOptions = {}): Promise<void> {
   const tickMs = opts.tickMs ?? 15_000
@@ -101,7 +116,7 @@ export async function startDaemon(opts: DaemonOptions = {}): Promise<void> {
 
   while (!stopRequested) {
     try {
-      await tick()
+      tick()
     } catch (err) {
       logErr(`tick: ${(err as Error).message}`)
     }

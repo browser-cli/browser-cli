@@ -1,7 +1,7 @@
 import type { Stagehand } from '@browserbasehq/stagehand'
 import { Stagehand as StagehandCtor } from '@browserbasehq/stagehand'
 import type { z } from 'zod'
-import { makeStagehandConfig } from './stagehand-config.ts'
+import { makeClientId, makeStagehandConfig } from './stagehand-config.ts'
 import { CACHE_DIR } from './paths.ts'
 import { registerSession, safeClose, unregisterSession } from './shutdown.ts'
 import {
@@ -100,7 +100,7 @@ export async function withBrowser<T>(
     if (session.current) return session.current.stagehand
     const sh = new StagehandCtor(await makeStagehandConfig(CACHE_DIR, { cdpUrl: opts.cdpUrl }))
     await sh.init()
-    const sessionId = `bc-${process.pid}-${Date.now().toString(36)}`
+    const sessionId = makeClientId()
     registerSession({ id: sessionId, stagehand: sh })
     const preExisting = new Set<V3Page>()
     const preExistingUrls = new Map<V3Page, string>()

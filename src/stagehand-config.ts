@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createOpenAI } from '@ai-sdk/openai'
 import { AISdkClient, Stagehand } from '@browserbasehq/stagehand'
 
@@ -44,7 +45,7 @@ async function resolveLlm(): Promise<LlmPart> {
 }
 
 export function makeClientId(): string {
-  return `bc-${process.pid}-${Date.now().toString(36)}`
+  return `bc-${process.pid}-${randomUUID()}`
 }
 
 export type CdpResolution = { cdpUrl: string; isCustom: boolean }
