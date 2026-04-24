@@ -141,3 +141,4 @@ vite.config.ts.timestamp-*
 # POC / bench scratch space (not shipped)
 bench/
 .local-doc
+test-skill/.tmp/
