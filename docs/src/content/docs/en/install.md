@@ -3,11 +3,11 @@ title: Install
 description: Base install for browser-cli plus the optional apprise dependency for push notifications.
 ---
 
-**browser-cli** runs TypeScript workflows against your own, logged-in Chrome. This page is the single source of truth for getting it working. There's a short base install that covers everything needed to run a workflow, plus a separate section for notifications — install that only if you want push alerts.
+**browser-cli** runs TypeScript workflows against your own, logged-in Chrome. This page is the single source of truth for getting it working. There's a short base install that covers everything needed to author and run a workflow, plus a separate section for notifications — install that only if you want push alerts.
 
 ## Base install
 
-Required for every browser-cli feature. Six steps.
+Required for every browser-cli feature. Seven steps.
 
 1. **Node ≥ 22.18.** Check with `node --version`. If older, install via [nvm](https://github.com/nvm-sh/nvm), [Homebrew](https://formulae.brew.sh/formula/node), or your distro's package manager.
 
@@ -48,7 +48,15 @@ Required for every browser-cli feature. Six steps.
 
    Env vars in `~/.browser-cli/.env` are loaded automatically on every `browser-cli` invocation.
 
-6. **Verify.**
+6. **Install the browser-cli skill into your code agent.** Workflows, tasks, and notification channels are authored through a code agent — you describe what you want in chat, and the agent writes, runs, and debugs the workflow against browser-cli. The skill is how the agent learns the CLI surface and conventions. Supported agents: [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), and [OpenCode](https://opencode.ai/).
+
+   ```bash
+   npx skills add browser-cli/browser-cli
+   ```
+
+   The skill registers with whichever supported agents are installed on your machine. Restart any running agent sessions to pick it up.
+
+7. **Verify.**
 
    ```bash
    browser-cli doctor

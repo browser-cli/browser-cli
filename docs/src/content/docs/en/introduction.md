@@ -22,7 +22,7 @@ browser-cli sits below all of this. It automates *your* real Chrome, via a local
 - **Developers automating their own accounts.** You want to pull data from GitHub, your bank, your internal dashboards, your email — places you're logged in as yourself. Not a bot, just you, doing it on a schedule.
 - **RSS DIYers.** Sites that deprecated their feeds (Twitter/X, Medium, forums) can be reconstituted into Atom feeds with a single task config.
 - **Scheduled-scraping without DevOps.** No Kubernetes, no Lambda cold starts. A laptop, a Chrome, and `browser-cli daemon` will do.
-- **Claude Code users.** browser-cli ships as a skill: Claude can draft, run, and debug workflows interactively without you ever hand-writing one.
+- **Code agent users.** browser-cli ships as a skill for Claude Code, Codex, and OpenCode. You describe what you want in chat; the agent drafts, runs, and debugs the workflow — you don't hand-write one.
 
 ## Who it's *not* for
 

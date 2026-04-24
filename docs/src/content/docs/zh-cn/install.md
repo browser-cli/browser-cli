@@ -3,11 +3,11 @@ title: 安装
 description: browser-cli 的基础安装步骤，外加可选的 apprise（推送通知）依赖。
 ---
 
-**browser-cli** 在你已登录的 Chrome 上运行 TypeScript workflow。这一页是让它跑起来的唯一权威文档。基础安装部分覆盖运行 workflow 所需的一切；通知部分是独立的 —— 只有在你要接收推送提醒时才需要装。
+**browser-cli** 在你已登录的 Chrome 上运行 TypeScript workflow。这一页是让它跑起来的唯一权威文档。基础安装部分覆盖编写和运行 workflow 所需的一切；通知部分是独立的 —— 只有在你要接收推送提醒时才需要装。
 
 ## 基础安装
 
-browser-cli 的所有功能都要先装这个。六步。
+browser-cli 的所有功能都要先装这个。七步。
 
 1. **Node ≥ 22.18。** 用 `node --version` 查版本。如果旧了，用 [nvm](https://github.com/nvm-sh/nvm)、[Homebrew](https://formulae.brew.sh/formula/node) 或者系统自带的包管理器装一个。
 
@@ -48,7 +48,15 @@ browser-cli 的所有功能都要先装这个。六步。
 
    `~/.browser-cli/.env` 里的环境变量会在每次执行 `browser-cli` 时自动加载。
 
-6. **验证。**
+6. **把 browser-cli skill 装到你的 code agent 里。** Workflow、task、通知通道都是通过 code agent 来编写的 —— 你在对话里描述需求，agent 基于 browser-cli 帮你写、跑、调 workflow。这个 skill 就是 agent 学习 CLI 命令面和约定的方式。支持的 agent：[Claude Code](https://claude.com/claude-code)、[Codex](https://github.com/openai/codex)、[OpenCode](https://opencode.ai/)。
+
+   ```bash
+   npx skills add browser-cli/browser-cli
+   ```
+
+   Skill 会注册到你机器上已安装的任一支持的 agent。重启正在运行的 agent 会话让它生效。
+
+7. **验证。**
 
    ```bash
    browser-cli doctor
