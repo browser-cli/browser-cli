@@ -6,7 +6,7 @@ Built on [Stagehand](https://github.com/browserbase/stagehand) (self-healing DOM
 
 ## Install
 
-Full install instructions — base setup plus optional features (notifications, embedded agents) — live on a single page:
+Full install instructions — base setup plus the optional notifications dependency — live on a single page:
 
 **→ [browser-cli.zerith.app/en/install/](https://browser-cli.zerith.app/en/install/)**
 

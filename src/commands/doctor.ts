@@ -106,7 +106,7 @@ function checkLlmCreds(): Check {
   return {
     label: 'missing',
     line: 'LLM creds — run `browser-cli config`',
-    hint: `${INSTALL_DOC}#llm-provider`,
+    hint: `${INSTALL_DOC}#base-install`,
   }
 }
 
