@@ -66,6 +66,11 @@
     "tsup": "^8.3.0",
     "typescript": "^5.6.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
+  },
   "keywords": [
     "browser",
     "automation",
