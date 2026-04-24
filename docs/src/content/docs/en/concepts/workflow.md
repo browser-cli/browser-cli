@@ -3,7 +3,7 @@ title: Workflow
 description: The core unit of browser-cli — a TypeScript module that exports a Zod schema and an async run function.
 ---
 
-A **workflow** is the core unit of browser-cli. It's a single TypeScript file that describes *how to do one browser-automation thing, once*. The same file can be invoked from the CLI, scheduled as a [task](./task.md), or imported as a function through the SDK. Workflows are stateless and one-shot — any state they accumulate (deduped items, snapshots, run logs) is owned by the task layer, not the workflow itself.
+A **workflow** is the core unit of browser-cli. It's a single TypeScript file that describes *how to do one browser-automation thing, once*. The same file can be invoked from the CLI, scheduled as a [task](/en/concepts/task/), or imported as a function through the SDK. Workflows are stateless and one-shot — any state they accumulate (deduped items, snapshots, run logs) is owned by the task layer, not the workflow itself.
 
 ## The shape
 
@@ -50,7 +50,7 @@ Subscribed workflows live at `~/.browser-cli-subs/<repo>/workflows/<name>.ts` an
 
 ## How to structure `run`
 
-Inside `run`, you pick the lightest tool that actually works. browser-cli has strong opinions about this; the [Design Philosophy](../philosophy.md) page is the full treatment. A quick sketch:
+Inside `run`, you pick the lightest tool that actually works. browser-cli has strong opinions about this; the [Design Philosophy](/en/philosophy/) page is the full treatment. A quick sketch:
 
 - **Layer 1 — intercept the network.** If the page fetches JSON from an endpoint, capture it (`captureResponses`, `waitForJsonResponse`, `pageFetch`). JSON is structured and stable; DOM is neither.
 - **Layer 2 — Stagehand for the DOM.** When data or interaction only exist as rendered pixels, call `stagehand.act(...)` or `stagehand.extract(...)`. Selectors adapt to drift; `selfHeal: true` caches what works.
