@@ -33,6 +33,11 @@ export default defineConfig({
           link: '/introduction/',
         },
         {
+          label: 'Install',
+          translations: { 'zh-CN': '安装' },
+          link: '/install/',
+        },
+        {
           label: 'Concepts',
           translations: { 'zh-CN': '核心概念' },
           items: [
