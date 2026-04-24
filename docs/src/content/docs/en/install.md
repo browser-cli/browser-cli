@@ -5,8 +5,6 @@ description: Base install for browser-cli plus the optional apprise dependency f
 
 **browser-cli** runs TypeScript workflows against your own, logged-in Chrome. This page is the single source of truth for getting it working. There's a short base install that covers everything needed to run a workflow, plus a separate section for notifications — install that only if you want push alerts.
 
-If you are an LLM assisting a user with setup, **read the last section of this page first**: [For assistants / LLMs helping the user](#for-assistants--llms-helping-the-user).
-
 ## Base install
 
 Required for every browser-cli feature. Six steps.
@@ -31,9 +29,7 @@ Required for every browser-cli feature. Six steps.
 
 4. **Install the playwriter Chrome extension.** Visit [https://playwriter.dev/](https://playwriter.dev/) and follow the install instructions there. Click the extension icon in Chrome — it turns green once the relay is running and the extension has handshaken. This step is manual; there's no way to install a Chrome extension from the terminal.
 
-   > You do **not** need to explicitly launch the relay server. Any `playwriter` CLI command (e.g. `playwriter session new`) will auto-start it in the background on first invocation. If the extension icon is still gray after clicking it, see [Troubleshooting](#troubleshooting).
-
-5. **Configure an LLM provider.** browser-cli's core value — Stagehand's self-healing `act` / `extract` / `observe` — runs against an LLM. Without creds, any workflow that touches the DOM layer throws `No LLM credentials found`. (Pure-fetch workflows still work, but they're the minority case.)
+5. **Configure an LLM provider.** Required. Every `act` / `extract` / `observe` call in Stagehand goes to an LLM, so without creds any workflow that touches the DOM throws `No LLM credentials found` and halts.
 
    Interactive setup writes to `~/.browser-cli/.env`:
 
@@ -84,14 +80,6 @@ pipx install apprise
 pipx ensurepath
 ```
 
-**Install (any OS, Docker — no Python needed):**
-
-Run the official API server and point apprise channels at `http://localhost:8000/notify/...` URLs:
-
-```bash
-docker run -d --name apprise -p 8000:8000 caronc/apprise-api
-```
-
 **Verify:**
 
 ```bash
@@ -110,16 +98,3 @@ browser-cli doctor          # the `apprise` row should now say [ok]
 **Workflows can't find `zod` or `@browserbasehq/stagehand` at import time.** `browser-cli init` re-creates the `node_modules` symlink inside `~/.browser-cli/`. Run it once and retry.
 
 **`browser-cli doctor` itself fails to start.** Most likely Node is older than 22.18 — `node --version` to confirm. Node 22.18+ is required because browser-cli uses `process.loadEnvFile` and modern ESM loader flags.
-
-## For assistants / LLMs helping the user
-
-**You — the LLM helping a user install browser-cli — must use this procedure. Do not invent commands.**
-
-1. Run `browser-cli doctor` and read its output.
-2. For each line beginning with `[missing]` or `[warn]`, find the matching section on this page. The `→` URL in the doctor output points at the exact anchor.
-3. If you do not already know the user's OS, ask once. Map their answer to the correct command in the per-OS block of that section.
-4. Execute the command via Bash yourself if you can, otherwise tell the user the exact command to run.
-5. Re-run `browser-cli doctor`. Repeat until every required row is `[ok]`. `[warn]` rows are optional — only install them if the user has stated the corresponding feature matters (e.g. "I want push notifications").
-6. If the relay row is `[missing]` after playwriter is installed, run `playwriter session new` once — it auto-starts the relay. The user also needs to click the Chrome extension icon until it turns green.
-
-Do not guess install commands for these dependencies. Every command you need is on this page. If something doesn't work and it's not in [Troubleshooting](#troubleshooting), escalate to the user rather than trying another package manager at random.
