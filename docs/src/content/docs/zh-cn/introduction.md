@@ -22,7 +22,7 @@ browser-cli 站在这些方案的下面一层。它通过本地 CDP relay 自动
 - **自动化自己账号的开发者。** 你想从 GitHub、银行、公司内部 dashboard、邮箱这些你本人登录过的地方拉数据。不是 bot，就是你自己，只是按点定时做一下。
 - **RSS DIY 党。** 那些停掉 feed 的网站（Twitter/X、Medium、论坛）可以用一份 task 配置重新做成 Atom feed。
 - **不想搞运维的定时抓取。** 不要 Kubernetes，不要 Lambda 冷启动。一台笔记本、一个 Chrome、一个 `browser-cli daemon` 就够了。
-- **Claude Code 用户。** browser-cli 自带一个 skill：Claude 可以交互式地起草、运行、调试 workflow，你根本不用手写。
+- **Code agent 用户。** browser-cli 自带一个 skill，支持 Claude Code、Codex、OpenCode。你在对话里描述需求，agent 帮你起草、运行、调试 workflow —— 不用手写。
 
 ## 它*不*适合谁
 
