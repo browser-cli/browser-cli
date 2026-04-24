@@ -3,7 +3,7 @@ title: Features
 description: What browser-cli gives you beyond a runtime — concurrency isolation, self-healing selectors, BYO Chrome, scheduled feeds, and sharable workflows.
 ---
 
-The [Introduction](./introduction.md) covers what browser-cli *is*. This page covers what you get for free once you're using it.
+The [Introduction](/en/introduction/) covers what browser-cli *is*. This page covers what you get for free once you're using it.
 
 ## Concurrent workflows don't collide
 
@@ -19,7 +19,7 @@ Traditional Playwright scripts die the moment a site renames a CSS class. browse
 
 The mechanism is simple. When `stagehand.act("click the 'Export' button")` runs, Stagehand asks an LLM to resolve the instruction against the live DOM, caches the resulting selector under `~/.browser-cli/.cache/`, and reuses it next time. If the cached selector fails — because the button moved, the class renamed, the component re-rendered — Stagehand transparently re-asks the LLM, picks a new selector, and updates the cache. Your workflow keeps running; you don't find out until you read the logs.
 
-This is why the [philosophy](./philosophy.md) page steers you toward Stagehand for any interaction that has to touch the DOM: selector drift becomes a cache miss, not a crash.
+This is why the [philosophy](/en/philosophy/) page steers you toward Stagehand for any interaction that has to touch the DOM: selector drift becomes a cache miss, not a crash.
 
 ## Bring your own Chrome
 
@@ -34,7 +34,7 @@ The resolver accepts `ws://`, `wss://`, `http://`, and `https://`. Point it at a
 
 ## Scheduled feeds and change detection, built in
 
-The [task](./concepts/task.md) system turns any workflow into either an Atom RSS feed or a change-detection alert, based on whether you set `itemKey`.
+The [task](/en/concepts/task/) system turns any workflow into either an Atom RSS feed or a change-detection alert, based on whether you set `itemKey`.
 
 - **Feed mode (items)**: workflow returns an array, daemon dedupes by key, new entries flow into `~/.browser-cli/feeds/<task>.xml` — drop-in subscribable in any reader.
 - **Alert mode (snapshots)**: workflow returns any JSON, daemon hashes it, notifies you with before/after when the hash changes.

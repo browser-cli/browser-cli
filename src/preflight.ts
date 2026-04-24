@@ -2,8 +2,8 @@ import { execa, ExecaError } from 'execa'
 import readline from 'node:readline/promises'
 import { PLAYWRITER_CDP_HOST } from './stagehand-config.ts'
 
-const RELAY_HEALTH_URL = `http://${PLAYWRITER_CDP_HOST}/`
-const CHROME_EXT_URL = 'https://playwriter.dev/'
+export const RELAY_HEALTH_URL = `http://${PLAYWRITER_CDP_HOST}/`
+export const CHROME_EXT_URL = 'https://playwriter.dev/'
 
 export async function ensurePlaywriter(): Promise<void> {
   if (await isRelayReachable()) return
@@ -31,7 +31,7 @@ export async function ensurePlaywriter(): Promise<void> {
   process.exit(1)
 }
 
-async function isRelayReachable(): Promise<boolean> {
+export async function isRelayReachable(): Promise<boolean> {
   try {
     const res = await fetch(RELAY_HEALTH_URL, {
       signal: AbortSignal.timeout(800),
@@ -71,10 +71,13 @@ export async function ensureCustomCdpReachable(cdpUrl: string): Promise<void> {
   }
 }
 
-async function detectPlaywriterVersion(): Promise<string | null> {
+export async function detectPlaywriterVersion(): Promise<string | null> {
   try {
     const { stdout } = await execa('playwriter', ['--version'], { timeout: 3000 })
-    return stdout.trim() || 'unknown'
+    // Some playwriter builds emit the version line followed by full --help;
+    // keep only the first non-empty line so doctor/prompts stay single-line.
+    const firstLine = stdout.split('\n').map((l) => l.trim()).find((l) => l.length > 0)
+    return firstLine || 'unknown'
   } catch (err) {
     if (err instanceof ExecaError && (err.code === 'ENOENT' || err.exitCode !== 0)) return null
     return null

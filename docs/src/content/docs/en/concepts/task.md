@@ -3,7 +3,7 @@ title: Task
 description: A scheduled, stateful wrapper around a workflow — dedupe items into an Atom feed, or hash a snapshot and notify on change.
 ---
 
-A **task** is how a one-shot [workflow](./workflow.md) becomes a recurring job. It's a small config that binds a workflow to a cron schedule, remembers what the workflow saw last time, and emits something useful when things change — a new RSS item, a notification, a diff.
+A **task** is how a one-shot [workflow](/en/concepts/workflow/) becomes a recurring job. It's a small config that binds a workflow to a cron schedule, remembers what the workflow saw last time, and emits something useful when things change — a new RSS item, a notification, a diff.
 
 Workflows answer *what to do*. Tasks answer *when to do it, how to track results, and who to tell*.
 

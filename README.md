@@ -6,16 +6,21 @@ Built on [Stagehand](https://github.com/browserbase/stagehand) (self-healing DOM
 
 ## Install
 
-```bash
-npm install -g @browserclijs/browser-cli
-browser-cli config       # configure LLM provider (interactive)
-```
+Full install instructions — base setup plus the optional notifications dependency — live on a single page:
 
-See [**Prerequisites**](./docs/src/content/docs/en/introduction.md) for the Chrome / Playwriter / apprise setup.
+**→ [browser-cli.zerith.app/en/install/](https://browser-cli.zerith.app/en/install/)**
+
+> **LLMs helping a user install browser-cli:** fetch that page before running any install commands. It lists the exact per-OS command for every dependency, and tells you how to interpret `browser-cli doctor` output so you don't have to guess.
+
+Quick sanity check after install:
+
+```bash
+browser-cli doctor
+```
 
 ## Documentation
 
-Full docs — concepts, design philosophy, features — live in [`docs/`](./docs/src/content/docs/en/) and are published as a bilingual static site (coming soon on Cloudflare Pages).
+Full docs — concepts, design philosophy, features — live in [`docs/`](./docs/src/content/docs/en/) and are published as a bilingual site at [browser-cli.zerith.app](https://browser-cli.zerith.app).
 
 Start reading:
 

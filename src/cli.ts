@@ -10,6 +10,7 @@ import { runInit } from './commands/init.ts'
 import { runSync } from './commands/sync.ts'
 import { runSub } from './commands/sub.ts'
 import { runHome, runSubsHome } from './commands/home.ts'
+import { runDoctor } from './commands/doctor.ts'
 import { checkForUpdate } from './versionCheck.ts'
 
 const USAGE = `Usage:
@@ -22,6 +23,7 @@ const USAGE = `Usage:
   browser-cli daemon [--detach|-d]                      Start the scheduler (foreground or detached)
   browser-cli daemon status|stop                        Inspect/stop a detached daemon
   browser-cli init                                      Re-sync ~/.browser-cli layout + git repo, print status
+  browser-cli doctor                                    Check playwriter / relay / apprise / LLM creds / home dir
   browser-cli sync                                      Review uncommitted changes in ~/.browser-cli and commit
   browser-cli sub <subcommand>                          Manage subscribed repos (add/list/update/remove/copy)
   browser-cli home                                      Print the resolved home directory (respects $BROWSER_CLI_HOME)
@@ -93,6 +95,9 @@ async function main(): Promise<void> {
       return
     case 'init':
       await runInit(rest)
+      return
+    case 'doctor':
+      await runDoctor(rest)
       return
     case 'sync':
       await runSync(rest)
