@@ -1,4 +1,6 @@
 import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import {
   CHROME_EXT_URL,
   RELAY_HEALTH_URL,
@@ -101,21 +103,70 @@ function checkApprise(): Check {
 }
 
 function checkLlmCreds(): Check {
-  const src = resolveLlmSource()
-  if (src) return { label: 'ok', line: `LLM creds (${src})` }
-  return {
-    label: 'missing',
-    line: 'LLM creds — run `browser-cli config`',
-    hint: `${INSTALL_DOC}#base-install`,
+  const resolved = resolveLlmSource()
+  if (!resolved) {
+    return {
+      label: 'missing',
+      line: 'LLM creds — run `browser-cli config`',
+      hint: `${INSTALL_DOC}#base-install`,
+    }
   }
+  if (resolved.loginCheck && !resolved.loginCheck.ok) {
+    return {
+      label: 'warn',
+      line: `LLM creds (${resolved.source}) — ${resolved.loginCheck.reason}`,
+      hint: resolved.loginCheck.hint,
+    }
+  }
+  return { label: 'ok', line: `LLM creds (${resolved.source})` }
 }
 
-function resolveLlmSource(): string | null {
+type LlmResolution = {
+  source: string
+  loginCheck?: { ok: boolean; reason?: string; hint?: string }
+}
+
+function resolveLlmSource(): LlmResolution | null {
   const e = process.env
-  if (e.LLM_PROVIDER === 'claude-agent-sdk') return 'claude-agent-sdk'
-  if (e.LLM_API_KEY && e.LLM_BASE_URL && e.LLM_MODEL) return `${e.LLM_BASE_URL} (${e.LLM_MODEL})`
-  if (e.OPENAI_API_KEY) return 'OPENAI_API_KEY'
-  if (e.ANTHROPIC_API_KEY) return 'ANTHROPIC_API_KEY'
+  const home = os.homedir()
+
+  if (e.LLM_PROVIDER === 'claude-agent-sdk') {
+    return { source: 'claude-agent-sdk' }
+  }
+  if (e.LLM_PROVIDER === 'codex') {
+    const hasAuth = fs.existsSync(path.join(home, '.codex', 'auth.json'))
+    const hasKey = Boolean(e.OPENAI_API_KEY)
+    if (hasAuth || hasKey) {
+      return { source: `codex (${hasAuth ? 'codex login' : 'OPENAI_API_KEY'})` }
+    }
+    return {
+      source: 'codex',
+      loginCheck: {
+        ok: false,
+        reason: 'no ~/.codex/auth.json and no OPENAI_API_KEY',
+        hint: 'run `codex login` (ChatGPT subscription) or `export OPENAI_API_KEY=...`',
+      },
+    }
+  }
+  if (e.LLM_PROVIDER === 'opencode') {
+    const configPath = path.join(home, '.config', 'opencode', 'opencode.json')
+    if (fs.existsSync(configPath)) {
+      return { source: `opencode (${configPath})` }
+    }
+    return {
+      source: 'opencode',
+      loginCheck: {
+        ok: false,
+        reason: `no ${configPath}`,
+        hint: 'run `opencode auth login` to add a provider',
+      },
+    }
+  }
+  if (e.LLM_API_KEY && e.LLM_BASE_URL && e.LLM_MODEL) {
+    return { source: `${e.LLM_BASE_URL} (${e.LLM_MODEL})` }
+  }
+  if (e.OPENAI_API_KEY) return { source: 'OPENAI_API_KEY' }
+  if (e.ANTHROPIC_API_KEY) return { source: 'ANTHROPIC_API_KEY' }
   return null
 }
 

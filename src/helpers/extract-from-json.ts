@@ -4,7 +4,7 @@ import crypto from 'node:crypto'
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { CACHE_DIR } from '../paths.ts'
-import { ClaudeAgentSdkLanguageModel } from '../llm/claude-agent-sdk-adapter.ts'
+import { resolveLanguageModel } from '../stagehand-config.ts'
 
 // Cached JSON path self-heal extractor. First call asks an LLM to infer a
 // path map from JSON → schema; subsequent calls replay the cached paths with
@@ -225,7 +225,14 @@ const PATH_MAP_META_SCHEMA = {
 }
 
 export const defaultInferPaths: InferPaths = async ({ json, instruction, schema }) => {
-  const model = new ClaudeAgentSdkLanguageModel({ modelId: process.env.LLM_MODEL })
+  const model = await resolveLanguageModel()
+  if (!model) {
+    throw new Error(
+      'extractFromJson: no LanguageModelV2-backed provider configured. ' +
+        'Run `browser-cli config` or set LLM_PROVIDER (claude-agent-sdk / codex / opencode) or LLM_API_KEY+LLM_BASE_URL+LLM_MODEL. ' +
+        'OPENAI_API_KEY / ANTHROPIC_API_KEY alone are not supported for the JSON path-inference step.',
+    )
+  }
   const jsonSample = JSON.stringify(json).slice(0, 6000)
   const jsonSchemaRendered = JSON.stringify(zodToJsonSchema(schema), null, 2)
 

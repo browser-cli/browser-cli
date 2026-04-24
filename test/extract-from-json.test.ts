@@ -4,9 +4,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { z } from 'zod'
+import './helpers.ts'
 import {
   applyPathMap,
   canonicalizeSchema,
+  defaultInferPaths,
   extractFromJson,
   type InferPaths,
   type PathMap,
@@ -253,6 +255,39 @@ test('extractFromJson: canonicalizer produces same key regardless of zod object 
 
   const files = fs.readdirSync(cacheDir)
   assert.equal(files.length, 1, `expected 1 cache file (same key), got ${files.length}`)
+})
+
+test('defaultInferPaths: throws actionable error when no LanguageModelV2 provider is configured', async () => {
+  // Strip every LLM env var so resolveLanguageModel() returns null.
+  const keys = [
+    'LLM_PROVIDER',
+    'LLM_API_KEY',
+    'LLM_BASE_URL',
+    'LLM_MODEL',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'LLM_MAX_TURNS',
+  ]
+  const prev: Record<string, string | undefined> = {}
+  for (const k of keys) {
+    prev[k] = process.env[k]
+    delete process.env[k]
+  }
+  try {
+    await assert.rejects(
+      () =>
+        defaultInferPaths({
+          json: { a: 1 },
+          instruction: 'get a',
+          schema: z.object({ a: z.number() }),
+        }),
+      /no LanguageModelV2-backed provider configured/,
+    )
+  } finally {
+    for (const k of keys) {
+      if (prev[k] !== undefined) process.env[k] = prev[k]
+    }
+  }
 })
 
 test('extractFromJson: freshly-inferred bad map throws and removes cache', async () => {

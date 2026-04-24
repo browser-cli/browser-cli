@@ -17,7 +17,7 @@ const USAGE = `Usage:
   browser-cli list [<site>] [--site <pattern>]          List workflows (yours + subscribed), optionally filtered by site
   browser-cli describe <name>                           Show a workflow's parameters and usage examples
   browser-cli run <name> [args] [--cdp-url <url>]       Run a workflow end-to-end (namespaced as <sub>/<workflow> for subs)
-  browser-cli config [--provider <p>]                   Interactively configure the LLM provider in ~/.browser-cli/.env
+  browser-cli config [--provider <p>] [--model <m>] [-y] Configure the LLM provider in ~/.browser-cli/.env (non-interactive with flags)
   browser-cli notify <subcommand>                       Manage notification channels (add/list/test/rm)
   browser-cli task <subcommand>                         Manage tasks (list/create/show/run/enable/disable/rm)
   browser-cli daemon [--detach|-d]                      Start the scheduler (foreground or detached)
@@ -50,6 +50,8 @@ http:// (DevTools discovery), or https:// — the workflow file does not change.
 
 Environment (resolved in priority order):
   LLM_PROVIDER=claude-agent-sdk            Use your logged-in Claude Code subscription
+  LLM_PROVIDER=codex                       Use your Codex CLI login (ChatGPT sub or OPENAI_API_KEY)
+  LLM_PROVIDER=opencode                    Use your ~/.config/opencode/opencode.json
   LLM_API_KEY + LLM_BASE_URL + LLM_MODEL   Any OpenAI-compatible endpoint
   OPENAI_API_KEY                           Fallback for direct OpenAI
   ANTHROPIC_API_KEY                        Fallback for direct Anthropic
