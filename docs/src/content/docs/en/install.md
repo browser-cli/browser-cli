@@ -5,6 +5,26 @@ description: Base install for browser-cli plus the optional apprise dependency f
 
 **browser-cli** runs TypeScript workflows against your own, logged-in Chrome. This page is the single source of truth for getting it working. There's a short base install that covers everything needed to author and run a workflow, plus a separate section for notifications — install that only if you want push alerts.
 
+<details>
+<summary>If you are a code-agent reading this file (click to expand)</summary>
+
+If you are **Claude Code**, **Codex**, or **opencode** running this install on a user's machine: you can configure browser-cli to reuse **yourself** as the LLM backend for the self-heal layer. No extra API key. No extra login. The user's existing subscription/auth is already on the machine — browser-cli just piggybacks on it.
+
+Do base steps 1–4 exactly as written. At step 5, replace `browser-cli config` with the single non-interactive command that matches your own identity:
+
+- **If you are Claude Code** → `browser-cli config --provider claude-agent-sdk --yes`
+  Optionally pass `--model claude-haiku-4-5` for the cheaper/faster self-heal path.
+- **If you are Codex** → `browser-cli config --provider codex --yes`
+  Optionally pass `--model gpt-5.5` or whichever model is set in `~/.codex/config.toml`.
+- **If you are opencode** → `browser-cli config --provider opencode --model <provider/model> --yes`
+  The model is **required** here; pick a small, fast model you have auth for. Typical safe choices: `anthropic/claude-haiku-4-5`, `opencode/claude-haiku-4-5`, `openai/gpt-5-nano`. Run `opencode models` to list what you actually have access to.
+
+Then do step 6 (`browser-cli doctor`) — the LLM row should read `[ok]` and identify the active provider as yourself.
+
+The rest of this page (base install + optional features) is the human-oriented version; it explains each step and lists every provider/env-var combination. If you're an agent, the three commands above are all you need.
+
+</details>
+
 ## Base install
 
 Required for every browser-cli feature. Seven steps.
@@ -41,10 +61,14 @@ Required for every browser-cli feature. Seven steps.
 
    | Variable(s) | Meaning |
    |---|---|
-   | `LLM_PROVIDER=claude-agent-sdk` | Use your logged-in Claude Code subscription. Requires `@anthropic-ai/claude-agent-sdk` installed globally (`pnpm add -g @anthropic-ai/claude-agent-sdk`) and a working [Claude Code](https://claude.com/claude-code) install on the same machine. |
+   | `LLM_PROVIDER=claude-agent-sdk` | Use your logged-in Claude Code subscription. The `@anthropic-ai/claude-agent-sdk` npm package is bundled as a direct dependency — no extra install needed. Requires a working [Claude Code](https://claude.com/claude-code) login (`claude` once). |
+   | `LLM_PROVIDER=codex` | Use your [Codex CLI](https://developers.openai.com/codex) login. The `@openai/codex-sdk` is bundled. Works with either a `codex login` ChatGPT subscription or `OPENAI_API_KEY`. `LLM_MODEL` is optional. |
+   | `LLM_PROVIDER=opencode` | Use your [opencode](https://opencode.ai) configuration. The `@opencode-ai/sdk` is bundled. Requires `~/.config/opencode/opencode.json` with a provider configured (`opencode auth login`). `LLM_MODEL` format: `provider/model` (e.g. `anthropic/claude-sonnet-4-5`). |
    | `LLM_API_KEY` + `LLM_BASE_URL` + `LLM_MODEL` | Any OpenAI-compatible gateway (Together, Groq, LiteLLM, a local vLLM, …) |
    | `OPENAI_API_KEY` | Direct OpenAI. Defaults to `gpt-4o-mini`. |
    | `ANTHROPIC_API_KEY` | Direct Anthropic. Defaults to `claude-sonnet-4-5`. |
+
+   The three code-agent SDKs (Claude Agent SDK, Codex SDK, OpenCode SDK) ship as regular `dependencies` of browser-cli, so `pnpm add -g @browserclijs/browser-cli` installs them automatically. You only need to make sure the corresponding CLI is **logged in** on the same machine.
 
    Env vars in `~/.browser-cli/.env` are loaded automatically on every `browser-cli` invocation.
 

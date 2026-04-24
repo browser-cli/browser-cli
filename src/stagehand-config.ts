@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { LanguageModelV2 } from '@ai-sdk/provider'
 import { createOpenAI } from '@ai-sdk/openai'
 import { AISdkClient, Stagehand } from '@browserbasehq/stagehand'
 
@@ -7,30 +8,52 @@ type LlmPart = Pick<StagehandOptions, 'model' | 'llmClient'>
 
 export const PLAYWRITER_CDP_HOST = '127.0.0.1:19988'
 
-async function resolveLlm(): Promise<LlmPart> {
-  const { LLM_PROVIDER, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, OPENAI_API_KEY, ANTHROPIC_API_KEY } =
-    process.env
+/**
+ * Build a Vercel AI SDK `LanguageModelV2` from env vars when the active
+ * provider uses the custom adapter path (claude-agent-sdk / codex / opencode /
+ * OpenAI-compatible gateway). Returns null when the active provider delegates
+ * to Stagehand's built-in adapters (OPENAI_API_KEY / ANTHROPIC_API_KEY), where
+ * no LanguageModelV2 instance is available.
+ *
+ * `extract-from-json` depends on this so its self-heal layer shares the same
+ * backend as Stagehand's DOM self-heal instead of being locked to Claude.
+ */
+export async function resolveLanguageModel(): Promise<LanguageModelV2 | null> {
+  const { LLM_PROVIDER, LLM_API_KEY, LLM_BASE_URL, LLM_MODEL } = process.env
 
   if (LLM_PROVIDER === 'claude-agent-sdk') {
     const { ClaudeAgentSdkLanguageModel } = await import('./llm/claude-agent-sdk-adapter.ts')
     const maxTurns = process.env.LLM_MAX_TURNS ? parseInt(process.env.LLM_MAX_TURNS, 10) : undefined
-    const model = new ClaudeAgentSdkLanguageModel({ modelId: LLM_MODEL, maxTurns })
-    return { llmClient: new AISdkClient({ model }) }
+    return new ClaudeAgentSdkLanguageModel({ modelId: LLM_MODEL, maxTurns })
+  }
+
+  if (LLM_PROVIDER === 'codex') {
+    const { CodexSdkLanguageModel } = await import('./llm/codex-sdk-adapter.ts')
+    return new CodexSdkLanguageModel({ modelId: LLM_MODEL })
+  }
+
+  if (LLM_PROVIDER === 'opencode') {
+    const { OpenCodeSdkLanguageModel } = await import('./llm/opencode-sdk-adapter.ts')
+    return new OpenCodeSdkLanguageModel({ modelId: LLM_MODEL })
   }
 
   if (LLM_API_KEY && LLM_BASE_URL && LLM_MODEL) {
-    const provider = createOpenAI({
-      apiKey: LLM_API_KEY,
-      baseURL: LLM_BASE_URL,
-    })
+    const provider = createOpenAI({ apiKey: LLM_API_KEY, baseURL: LLM_BASE_URL })
     const modelId = LLM_MODEL.replace(/^openai\//, '')
-    return { llmClient: new AISdkClient({ model: provider.chat(modelId) }) }
+    return provider.chat(modelId)
   }
 
+  return null
+}
+
+async function resolveLlm(): Promise<LlmPart> {
+  const model = await resolveLanguageModel()
+  if (model) return { llmClient: new AISdkClient({ model }) }
+
+  const { OPENAI_API_KEY, ANTHROPIC_API_KEY } = process.env
   if (OPENAI_API_KEY) {
     return { model: { modelName: 'openai/gpt-4o-mini', apiKey: OPENAI_API_KEY } }
   }
-
   if (ANTHROPIC_API_KEY) {
     return { model: { modelName: 'anthropic/claude-sonnet-4-5', apiKey: ANTHROPIC_API_KEY } }
   }
@@ -38,6 +61,8 @@ async function resolveLlm(): Promise<LlmPart> {
   throw new Error(
     'No LLM credentials found. Run `browser-cli config` to set up, or set one of:\n' +
       '  - LLM_PROVIDER=claude-agent-sdk (uses Claude Code subscription)\n' +
+      '  - LLM_PROVIDER=codex (uses Codex CLI login / OPENAI_API_KEY)\n' +
+      '  - LLM_PROVIDER=opencode (uses ~/.config/opencode/opencode.json)\n' +
       '  - LLM_API_KEY + LLM_BASE_URL + LLM_MODEL (OpenAI-compatible gateway)\n' +
       '  - OPENAI_API_KEY\n' +
       '  - ANTHROPIC_API_KEY',
