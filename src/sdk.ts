@@ -24,11 +24,16 @@ export type { ClaudeAgentSdkModelOptions } from './llm/claude-agent-sdk-adapter.
 export {
   HOME_DIR,
   WORKFLOWS_DIR,
+  PROJECT_HOME,
+  PROJECT_WORKFLOWS_DIR,
   CACHE_DIR,
   ENV_FILE,
   ensureHomeDirs,
+  hasProjectContext,
   listWorkflowFiles,
+  listProjectWorkflowFiles,
   resolveWorkflowPath,
+  resolveProjectWorkflowPath,
   loadDotEnv,
 } from './paths.ts'
 export { captureResponses, waitForJsonResponse, pageFetch } from './helpers/network.ts'

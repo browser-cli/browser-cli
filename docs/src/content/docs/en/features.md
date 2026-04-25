@@ -17,7 +17,7 @@ The practical consequence: you can have a Telegram scraper and a GitHub notifier
 
 Traditional Playwright scripts die the moment a site renames a CSS class. browser-cli enables Stagehand's `selfHeal: true` by default.
 
-The mechanism is simple. When `stagehand.act("click the 'Export' button")` runs, Stagehand asks an LLM to resolve the instruction against the live DOM, caches the resulting selector under `~/.browser-cli/.cache/`, and reuses it next time. If the cached selector fails — because the button moved, the class renamed, the component re-rendered — Stagehand transparently re-asks the LLM, picks a new selector, and updates the cache. Your workflow keeps running; you don't find out until you read the logs.
+The mechanism is simple. When `page.act("click the 'Export' button")` runs, Stagehand asks an LLM to resolve the instruction against the live DOM, caches the resulting selector under `~/.browser-cli/.cache/`, and reuses it next time. If the cached selector fails — because the button moved, the class renamed, the component re-rendered — Stagehand transparently re-asks the LLM, picks a new selector, and updates the cache. Your workflow keeps running; you don't find out until you read the logs.
 
 This is why the [philosophy](/en/philosophy/) page steers you toward Stagehand for any interaction that has to touch the DOM: selector drift becomes a cache miss, not a crash.
 

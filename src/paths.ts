@@ -26,6 +26,9 @@ export const GITIGNORE_PATH = path.join(HOME_DIR, '.gitignore')
 
 const THIS_FILE = fileURLToPath(import.meta.url)
 export const PACKAGE_ROOT = path.resolve(path.dirname(THIS_FILE), '..')
+export const PROJECT_ROOT = findProjectRoot(process.cwd())
+export const PROJECT_HOME = PROJECT_ROOT ? path.join(PROJECT_ROOT, '.browser-cli') : null
+export const PROJECT_WORKFLOWS_DIR = PROJECT_HOME ? path.join(PROJECT_HOME, 'workflows') : null
 
 let initHintPrinted = false
 
@@ -100,13 +103,24 @@ export function feedPath(taskName: string): string {
 // materialized their own node_modules (e.g. ran `pnpm install` there), leave
 // it alone.
 export function ensureNodeModulesLink(): void {
-  if (fs.existsSync(NODE_MODULES_LINK)) return
+  ensureNodeModulesLinkAt(HOME_DIR)
+}
+
+function ensureNodeModulesLinkAt(homeDir: string): void {
+  const link = path.join(homeDir, 'node_modules')
+  if (fs.existsSync(link)) return
   const target = path.join(PACKAGE_ROOT, 'node_modules')
   if (!fs.existsSync(target)) return
   try {
-    fs.symlinkSync(target, NODE_MODULES_LINK, 'dir')
+    fs.symlinkSync(target, link, 'dir')
   } catch {
   }
+}
+
+export function ensureProjectNodeModulesLink(startDir: string = process.cwd()): void {
+  const home = getProjectHome(startDir)
+  if (!home || !fs.existsSync(home)) return
+  ensureNodeModulesLinkAt(home)
 }
 
 export function resolveWorkflowPath(name: string): string {
@@ -120,6 +134,66 @@ export function resolveWorkflowPath(name: string): string {
 export function listWorkflowFiles(): string[] {
   if (!fs.existsSync(WORKFLOWS_DIR)) return []
   return walkTsFiles(WORKFLOWS_DIR, '').sort()
+}
+
+export function findProjectRoot(startDir: string = process.cwd()): string | null {
+  let dir = path.resolve(startDir)
+  try {
+    if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory()) {
+      dir = path.dirname(dir)
+    }
+  } catch {
+    return null
+  }
+
+  while (true) {
+    if (isProjectRootCandidate(dir)) return dir
+    const parent = path.dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+function isProjectRootCandidate(dir: string): boolean {
+  if (!fs.existsSync(path.join(dir, '.git'))) return false
+  const resolved = path.resolve(dir)
+  if (isPathInside(resolved, HOME_DIR) || isPathInside(resolved, SUBS_DIR)) return false
+  return true
+}
+
+function isPathInside(candidate: string, root: string): boolean {
+  const rel = path.relative(path.resolve(root), path.resolve(candidate))
+  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+export function hasProjectContext(startDir: string = process.cwd()): boolean {
+  return findProjectRoot(startDir) !== null
+}
+
+export function getProjectHome(startDir: string = process.cwd()): string | null {
+  const root = findProjectRoot(startDir)
+  return root ? path.join(root, '.browser-cli') : null
+}
+
+export function getProjectWorkflowsDir(startDir: string = process.cwd()): string | null {
+  const home = getProjectHome(startDir)
+  return home ? path.join(home, 'workflows') : null
+}
+
+export function resolveProjectWorkflowPath(name: string, startDir: string = process.cwd()): string | null {
+  const dir = getProjectWorkflowsDir(startDir)
+  if (!dir) return null
+  const clean = name.replace(/\.ts$/, '')
+  if (clean.includes('..') || path.isAbsolute(clean)) {
+    throw new Error(`Invalid workflow name: ${name}`)
+  }
+  return path.join(dir, `${clean}.ts`)
+}
+
+export function listProjectWorkflowFiles(startDir: string = process.cwd()): string[] {
+  const dir = getProjectWorkflowsDir(startDir)
+  if (!dir || !fs.existsSync(dir)) return []
+  return walkTsFiles(dir, '').sort()
 }
 
 // Returns names of all subscribed repos (directory basenames under SUBS_DIR).

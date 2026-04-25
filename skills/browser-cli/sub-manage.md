@@ -73,7 +73,7 @@ browser-cli sub copy <sub-name>/<name> --as <new-name>   # rename on copy
 browser-cli sub copy <sub-name>/<name> --force           # overwrite existing user file
 ```
 
-The command detects whether the source is a workflow or task by where it lives in the sub (`workflows/` vs `tasks/`) and drops the copy into the matching dir under the user's browser-cli home. From there, the user can edit it like any other workflow/task and, if desired, PR the fix upstream manually.
+The command detects whether the source is a workflow or task by where it lives in the sub (`workflows/` vs `tasks/`) and drops the copy into the matching dir under the user's browser-cli home. From there, the user can edit it like any other workflow/task and, if desired, PR the fix upstream manually. If the user explicitly wants a project-level workflow fork, copy the workflow code into `<git-root>/.browser-cli/workflows/` instead of using `sub copy`; project workflows are tracked by the outer repo.
 
 ### Remove a subscription
 

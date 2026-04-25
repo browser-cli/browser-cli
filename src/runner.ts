@@ -4,9 +4,12 @@ import { ZodError } from 'zod'
 import { withBrowser, type Browser } from './browser.ts'
 import {
   WORKFLOWS_DIR,
+  ensureProjectNodeModulesLink,
   ensureHomeDirs,
+  getProjectWorkflowsDir,
   loadDotEnv,
   parseNamespaced,
+  resolveProjectWorkflowPath,
   resolveSubWorkflowPath,
   resolveWorkflowPath,
 } from './paths.ts'
@@ -43,9 +46,36 @@ export async function loadWorkflow(name: string): Promise<{ mod: WorkflowModule;
   ensureHomeDirs()
 
   const { sub, rest } = parseNamespaced(name)
-  const workflowPath = sub ? resolveSubWorkflowPath(sub, rest) : resolveWorkflowPath(name)
+  if (sub) {
+    const workflowPath = resolveSubWorkflowPath(sub, rest)
+    if (!fs.existsSync(workflowPath)) {
+      throw new Error(`Workflow not found: ${workflowPath}\nRun \`browser-cli list\` to see available workflows in ${WORKFLOWS_DIR}`)
+    }
+
+    const mod = assertWorkflowModule(await loadTs(workflowPath), name)
+    return { mod, path: workflowPath }
+  }
+
+  const searched: string[] = []
+  const projectWorkflowPath = resolveProjectWorkflowPath(name)
+  if (projectWorkflowPath) {
+    searched.push(projectWorkflowPath)
+    if (fs.existsSync(projectWorkflowPath)) {
+      ensureProjectNodeModulesLink()
+      const mod = assertWorkflowModule(await loadTs(projectWorkflowPath), name)
+      return { mod, path: projectWorkflowPath }
+    }
+  }
+
+  const workflowPath = resolveWorkflowPath(name)
+  searched.push(workflowPath)
   if (!fs.existsSync(workflowPath)) {
-    throw new Error(`Workflow not found: ${workflowPath}\nRun \`browser-cli list\` to see available workflows in ${WORKFLOWS_DIR}`)
+    const locations = searched.map((p) => `  - ${p}`).join('\n')
+    const projectWorkflowsDir = getProjectWorkflowsDir()
+    const projectHint = projectWorkflowsDir ? `\nProject workflows dir: ${projectWorkflowsDir}` : ''
+    throw new Error(
+      `Workflow not found: ${name}\nSearched:\n${locations}${projectHint}\nGlobal workflows dir: ${WORKFLOWS_DIR}\nRun \`browser-cli list\` to see available workflows.`,
+    )
   }
 
   const mod = assertWorkflowModule(await loadTs(workflowPath), name)

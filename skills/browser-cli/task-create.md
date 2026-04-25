@@ -22,7 +22,7 @@ browser-cli list <site>          # scope by site when you know it (substring, '.
 browser-cli list                 # or no filter to see everything
 ```
 
-Ask the user which workflow this task wraps. If the one they want **doesn't exist** (or they've described a scraping goal with no existing workflow), STOP and load `./workflow-create.md`. Return here after the workflow is created and tested with `browser-cli run <name>`.
+Ask the user which global or subscribed workflow this task wraps. Project-level workflows are for direct `list`/`describe`/`run` use only in v1; the daemon/task layer remains global. If the one they want **doesn't exist** (or they've described a scraping goal with no existing workflow), STOP and load `./workflow-create.md` and create a global workflow. Return here after the workflow is created and tested with `browser-cli run <name>`.
 
 ### Step 2: pick the diff mode
 
@@ -88,7 +88,7 @@ It prompts for all of the above and writes the task file under your browser-cli 
 import type { TaskConfig } from '@browserclijs/browser-cli'
 
 export const config: TaskConfig = {
-  workflow: 'hn-top',               // name of a workflow under $(browser-cli home)/workflows/
+  workflow: 'hn-top',               // name of a global/subscribed workflow; project workflows are not task targets in v1
   args: { limit: 30 },              // passed to workflow's run()
   schedule: '*/30 * * * *',         // cron
   itemKey: 'url',                   // → items mode; remove for snapshot mode
