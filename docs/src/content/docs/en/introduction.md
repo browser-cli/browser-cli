@@ -32,9 +32,9 @@ browser-cli sits below all of this. It automates *your* real Chrome, via a local
 
 ## The mental model
 
-You write a **workflow** — a TypeScript file that exports a Zod schema describing its arguments and an async `run(stagehand, args)` function. The CLI loads the file, validates arguments, hands you a ready-to-use Stagehand instance, and gets out of your way. You don't manage the browser lifecycle; the runner does.
+You write a **workflow** — a TypeScript file that exports a Zod schema describing its arguments and an async `run(browser, args)` function. The CLI loads the file, validates arguments, hands you a ready-to-use `Browser` wrapper, and gets out of your way. You don't manage the browser lifecycle; the runner does.
 
-Inside `run`, you pick the lightest tool that will do the job. Pure Playwright for pages with trivially stable markup. [Network interception](/en/philosophy/#layer-1--intercept-the-network) (`captureResponses`, `pageFetch`) when the data is in JSON the page already fetches. [Stagehand's LLM-backed](/en/philosophy/#layer-2--stagehand-for-the-dom) `act` and `extract` when the DOM is the only path and selectors might drift. The [philosophy page](/en/philosophy/) goes deep on this triage — it's the thing we care most about.
+Inside `run`, you pick the lightest tool that will do the job. Public `fetch` when no browser is needed. [Network interception](/en/philosophy/#layer-1--intercept-the-network) (`page.captureResponses`, `page.fetch`) when the data is in JSON the page already fetches. [Stagehand's LLM-backed](/en/philosophy/#layer-2--stagehand-for-the-dom) `page.act` and `page.extract` when the DOM is the only path and selectors might drift. The [philosophy page](/en/philosophy/) goes deep on this triage — it's the thing we care most about.
 
 You run the workflow directly with `browser-cli run <name>`, or you wrap it in a **task** — a small config that binds a workflow to a cron schedule, dedupes results, writes an Atom feed, and notifies you when something new shows up or a page changes. Tasks are how one-shot workflows become feeds and alerts.
 

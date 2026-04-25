@@ -35,7 +35,7 @@
 
 ## When to load this skill
 
-Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in their browser-cli home (`workflows/` subdir — run `browser-cli home` to resolve the absolute path). Concrete triggers:
+Load this sub-flow when the user wants to **create**, **fix**, or **modify** a workflow in a project or in their browser-cli home. Project workflows live at `<git-root>/.browser-cli/workflows/`; global workflows live under the home `workflows/` subdir — run `browser-cli home` to resolve the absolute path. Concrete triggers:
 
 - **Create** — "写一个抓 X 的脚本" / "scrape X" / "get Y from Z site" / "监控 X 的 Y" / any new automation ask
 - **Fix** — "这个 workflow 报错了" / "selectors broke" / "login expired" / "zod parse failed" / any `browser-cli run` failure. See the **Fixing an existing workflow** procedure under **Known gotchas** below.
@@ -53,6 +53,14 @@ A workflow-folder-based browser automation system running on the user's real Chr
 
 ## Directory layout
 
+Before writing a workflow, ask whether the target should be **project-level** or **global**. Recommend project-level when the user is inside a git repo and the automation belongs with that project. Use global when the workflow is personal, reusable across projects, or meant to be wrapped by a global task.
+
+Project workflows:
+
+- live at `<git-root>/.browser-cli/workflows/<domain>/<name>.ts`
+- are resolved before global workflows by `browser-cli list`, `browser-cli describe`, and `browser-cli run`
+- are versioned by the outer project repo; do not run `browser-cli sync` for them
+
 Your browser-cli home (resolve via `browser-cli home`) contains:
 
 - `workflows/` — workflow scripts, recursed. Grouped into `<domain>/<name>.ts` subfolders (see naming convention below). A `test/` subfolder is conventional for exploratory / regression scripts.
@@ -66,7 +74,7 @@ The `browser-cli` binary itself comes from `npm install -g @browserclijs/browser
 
 One folder per target **domain**, using the **full domain with dots replaced by `~`**. Rationale: short aliases like `x/`, `hn/`, `google/` collide across TLDs (`example.com` vs `example.org`). The domain is the natural unique key.
 
-Examples (under `$(browser-cli home)/workflows/`):
+Examples (under `<workflow-root>/`, where the root is either `<git-root>/.browser-cli/workflows/` or `$(browser-cli home)/workflows/`):
 ```
 news~ycombinator~com/
 └── top.ts
@@ -417,7 +425,12 @@ Interpret:
 
 ### 6. Commit to a workflow
 
-Resolve the home once (`HOME=$(browser-cli home)`), then drop the verified logic into `$HOME/workflows/<domain>/<name>.ts` using the standard shape (domain folder uses `.` → `~` convention). Never expand `~/.browser-cli` yourself — `$BROWSER_CLI_HOME` may point somewhere else. Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
+Use the storage scope chosen earlier:
+
+- **Project-level** — find the git root, then write to `<git-root>/.browser-cli/workflows/<domain>/<name>.ts`.
+- **Global** — resolve the home once (`HOME=$(browser-cli home)`), then write to `$HOME/workflows/<domain>/<name>.ts`. Never expand `~/.browser-cli` yourself — `$BROWSER_CLI_HOME` may point somewhere else.
+
+Use the standard shape and the domain folder `.` → `~` convention. Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
 
 ### 7. Run via `browser-cli` and verify — TWICE
 
@@ -436,13 +449,13 @@ If the first run fails when the REPL step succeeded, see **Known gotchas** below
 
 ### 8. Commit the new workflow
 
-After the workflow is written and verified, end with:
+After a global workflow is written and verified, end with:
 
 ```bash
 browser-cli sync
 ```
 
-Relay the prompt output `[y]es / [n]o / [d]iff / [s]how-files` to the user and wait for their answer. If they pick `d` or `s`, re-run `browser-cli sync` so they can see the details before committing. Skip this step if the user has explicitly said not to commit, or if you only read files (no writes).
+Relay the prompt output `[y]es / [n]o / [d]iff / [s]how-files` to the user and wait for their answer. If they pick `d` or `s`, re-run `browser-cli sync` so they can see the details before committing. Skip this step if the user has explicitly said not to commit, if you only read files (no writes), or if the workflow is project-level. For project-level workflows, report the changed project path and let the outer repo's normal git workflow handle commits.
 
 ## Creating a new workflow — quick-start flow
 
@@ -514,7 +527,7 @@ to clean up.
 Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process, so `browser-cli run ... & browser-cli run ... & wait` works. Two concurrent workflows that mutate the **same** page or cookies can still race — one workflow per tab is the safe pattern.
 
 ### Stagehand URL drift (minor)
-`stagehand.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `$(browser-cli home)/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
+`page.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `$(browser-cli home)/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
 
 ### LLM gateway must support `response_format: json_schema`
 Stagehand's `act()`/`extract()` rely on structured output via OpenAI's json_schema mode. If the gateway ignores it and returns prose, you'll see `AI_NoObjectGeneratedError`. The user's `aigate` gateway already supports this as of 2026-04-18.

@@ -32,9 +32,9 @@ browser-cli 站在这些方案的下面一层。它通过本地 CDP relay 自动
 
 ## 心智模型
 
-你写一个 **workflow** —— 一个 TypeScript 文件，导出一个描述参数的 Zod schema 和一个异步的 `run(stagehand, args)` 函数。CLI 加载文件、校验参数、把一个开箱即用的 Stagehand 实例交给你，然后让开。浏览器生命周期不用你管，runner 管。
+你写一个 **workflow** —— 一个 TypeScript 文件，导出一个描述参数的 Zod schema 和一个异步的 `run(browser, args)` 函数。CLI 加载文件、校验参数、把一个开箱即用的 `Browser` 包装器交给你，然后让开。浏览器生命周期不用你管，runner 管。
 
-`run` 里面，你挑能干完这事的最轻量工具。页面结构稳得离谱就用纯 Playwright。页面自己已经在拉 JSON，就用 [网络拦截](/zh-cn/philosophy/#layer-1--拦截网络)（`captureResponses`、`pageFetch`）。DOM 是唯一通路且 selector 可能漂移时，用 [Stagehand 的 LLM 驱动](/zh-cn/philosophy/#layer-2--stagehand-处理-dom) `act` 和 `extract`。[设计哲学](/zh-cn/philosophy/)那页把这套分诊讲透了 —— 这是我们最在意的东西。
+`run` 里面，你挑能干完这事的最轻量工具。不需要浏览器时直接用公共 `fetch`。页面自己已经在拉 JSON，就用 [网络拦截](/zh-cn/philosophy/#layer-1--拦截网络)（`page.captureResponses`、`page.fetch`）。DOM 是唯一通路且 selector 可能漂移时，用 [Stagehand 的 LLM 驱动](/zh-cn/philosophy/#layer-2--stagehand-处理-dom) `page.act` 和 `page.extract`。[设计哲学](/zh-cn/philosophy/)那页把这套分诊讲透了 —— 这是我们最在意的东西。
 
 你可以用 `browser-cli run <name>` 直接跑一个 workflow，也可以用一个 **task** 把它包起来 —— 一份小配置，把 workflow 绑到 cron 计划上，对结果去重，写出 Atom feed，新条目或页面变化时提醒你。task 就是让一次性 workflow 变成 feed 和告警的方式。
 

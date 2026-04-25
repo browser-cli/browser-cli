@@ -26,9 +26,9 @@ Reddit at `/r/<sub>.json`, most GitHub data, anything behind a published API —
 When the browser is the only way in — because of auth cookies, CSRF handshakes, or client-side routing — the browser is a vehicle, not the destination. What you actually want is the JSON the page is already fetching. So capture it.
 
 ```
-captureResponses(page, matcher)   // bulk XHR/fetch spy
-waitForJsonResponse(page, url)    // wait for the first matching JSON
-pageFetch(page, url, init)        // fire an authenticated request yourself
+page.captureResponses(matcher)    // bulk XHR/fetch spy
+page.waitForJsonResponse(url)     // wait for the first matching JSON
+page.fetch(url, init)             // fire an authenticated request yourself
 ```
 
 These three helpers live in `src/helpers/network.ts`. The bulk spy is injected as a string at page init so it catches every request — `fetch`, `XMLHttpRequest`, both — into a rolling 500-entry buffer. The two waiter helpers poll that buffer.
@@ -38,7 +38,7 @@ JSON beats the DOM on every axis that matters:
 - **Stability**: endpoints version slowly; class names churn on every A/B test.
 - **Structure**: parsing JSON is parsing; parsing DOM is archaeology.
 - **Debuggability**: you can diff two JSON responses. You cannot meaningfully diff two rendered DOMs.
-- **Auth comes free**: `pageFetch` runs in the page's own JS context, inheriting cookies and origin.
+- **Auth comes free**: `page.fetch` runs in the page's own JS context, inheriting cookies and origin.
 
 If the page fetches the data you want, intercept the fetch. Don't scrape the screen.
 
@@ -47,8 +47,8 @@ If the page fetches the data you want, intercept the fetch. Don't scrape the scr
 Some data only exists in the rendered DOM. Some interactions — clicking a button, filling a form, dismissing a modal — only exist as pixels. When you reach this layer, delegate to [Stagehand](https://github.com/browserbase/stagehand):
 
 ```
-stagehand.act("click the 'Export' button")
-stagehand.extract({ schema, instruction })
+page.act("click the 'Export' button")
+page.extract("extract the export metadata", schema)
 ```
 
 Stagehand's selectors are LLM-backed: it translates your intent into an actual element at runtime. When a site reorders its DOM or renames a CSS class, your workflow still works because Stagehand re-resolves from the instruction, not from a cached XPath. We enable `selfHeal: true` so successful selections are cached; if the cached selector fails later, Stagehand transparently re-queries the LLM and updates the cache.
@@ -74,9 +74,9 @@ Each step down is 10× slower and ~10× more forgiving. Pick the highest feasibl
 ## Decision tree
 
 1. **Is there a public API, RSS, or static data source?** → Don't use browser-cli. Use `curl`.
-2. **Does the page fetch JSON client-side that contains what you need?** → Layer 1 (`captureResponses` / `waitForJsonResponse` / `pageFetch`).
-3. **Is the data rendered only in the DOM?** → Layer 2 (`stagehand.extract` with a Zod schema).
-4. **Do you need to click, fill, or interact?** → Layer 2 (`stagehand.act`).
+2. **Does the page fetch JSON client-side that contains what you need?** → Layer 1 (`page.captureResponses` / `page.waitForJsonResponse` / `page.fetch`).
+3. **Is the data rendered only in the DOM?** → Layer 2 (`page.extract` with a Zod schema).
+4. **Do you need to click, fill, or interact?** → Layer 2 (`page.act`).
 5. **Is the structure trivially stable *and* LLM latency is a dealbreaker?** → Raw `page.evaluate`, documented as an exception.
 
 Each layer has its own sharp edges — cross-origin cookies, race conditions on spy install, Cloudflare bot challenges on POSTs — which we'll document in a dedicated gotchas guide. The philosophy is the map; the gotchas are the terrain.

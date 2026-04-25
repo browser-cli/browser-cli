@@ -1,6 +1,6 @@
 # browser-cli
 
-Run TypeScript automation workflows against **your own, logged-in Chrome**. Each workflow is a `.ts` file exporting a Zod `schema` and an async `run(stagehand, args)`. Wrap workflows in tasks to get cron scheduling, deduped Atom feeds, and change-detection notifications — all from a single daemon on your machine.
+Run TypeScript automation workflows against **your own, logged-in Chrome**. Each workflow is a `.ts` file exporting a Zod `schema` and an async `run(browser, args)`. Wrap workflows in tasks to get cron scheduling, deduped Atom feeds, and change-detection notifications — all from a single daemon on your machine.
 
 Built on [Stagehand](https://github.com/browserbase/stagehand) (self-healing DOM automation) and [Playwriter](https://playwriter.dev/) (CDP relay for your real Chrome).
 
@@ -36,6 +36,8 @@ Working workflows in [`examples/`](./examples/):
 
 - [`hn-top.ts`](./examples/hn-top.ts) — Hacker News front page (raw Playwright, stable markup)
 - [`github-repo-summary.ts`](./examples/github-repo-summary.ts) — GitHub repo metadata via network interception
+
+Workflows can live either in a project at `<git-root>/.browser-cli/workflows/` or globally at `~/.browser-cli/workflows/`. When run from inside a git repo, project workflows take precedence; global workflows remain the fallback.
 
 ## License
 

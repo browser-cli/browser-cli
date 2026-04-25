@@ -3,6 +3,8 @@ import path from 'node:path'
 import {
   SUBS_DIR,
   WORKFLOWS_DIR,
+  getProjectWorkflowsDir,
+  listProjectWorkflowFiles,
   listSubWorkflowFiles,
   listWorkflowFiles,
 } from '../paths.ts'
@@ -15,6 +17,8 @@ type Row = { name: string; description: string; mtime: string }
 export async function runList(argv: string[] = []): Promise<void> {
   const { site } = parseSiteArg(argv)
 
+  const projectWorkflowsDir = getProjectWorkflowsDir()
+  const projectFiles = listProjectWorkflowFiles().filter((f) => matchesSite(f, site))
   const userFiles = listWorkflowFiles().filter((f) => matchesSite(f, site))
   const { subs } = readRegistry()
   const subFiles = new Map<string, string[]>()
@@ -23,7 +27,7 @@ export async function runList(argv: string[] = []): Promise<void> {
     if (files.length > 0) subFiles.set(s.name, files)
   }
 
-  const hasAny = userFiles.length > 0 || subFiles.size > 0
+  const hasAny = projectFiles.length > 0 || userFiles.length > 0 || subFiles.size > 0
 
   if (!hasAny) {
     if (site) {
@@ -37,7 +41,11 @@ export async function runList(argv: string[] = []): Promise<void> {
         '',
         'Create one by writing a .ts file that exports:',
         '  - `schema` (Zod object)',
-        '  - `run(stagehand, args)` async function',
+        '  - `run(browser, args)` async function',
+        '',
+        projectWorkflowsDir
+          ? `Project workflows are loaded first from ${projectWorkflowsDir}`
+          : 'Global workflows are loaded from your browser-cli home.',
         '',
         'Or subscribe to a shared repo:',
         '  browser-cli sub add <git-url>',
@@ -45,6 +53,11 @@ export async function runList(argv: string[] = []): Promise<void> {
       ].join('\n'),
     )
     return
+  }
+
+  if (projectFiles.length > 0 && projectWorkflowsDir) {
+    const projectRows = toRows(projectFiles, projectWorkflowsDir)
+    printSection('── project workflows ──', projectRows)
   }
 
   if (userFiles.length > 0) {

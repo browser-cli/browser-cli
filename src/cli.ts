@@ -40,9 +40,10 @@ Args for \`run\` accept three forms (auto-detected):
   - JSON object (back-compat):    browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs","limit":20}'
 Use \`browser-cli run <name> --help\` to print parameters without executing.
 
-Workflow files live in ~/.browser-cli/workflows/<name>.ts and must export:
+Workflow files live in <git-root>/.browser-cli/workflows/<name>.ts (project)
+or ~/.browser-cli/workflows/<name>.ts (global fallback) and must export:
   - schema: Zod object
-  - run(stagehand, args): async function returning JSON-serializable data
+  - run(browser, args): async function returning JSON-serializable data
 
 --cdp-url overrides the default Playwriter relay so a workflow can run inside any
 external Chrome (e.g. a fingerprint browser profile). Accepts ws://, wss://,
