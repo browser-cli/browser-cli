@@ -98,7 +98,7 @@ Each sub-flow is self-contained if entered directly (user says "add a telegram c
 ## CLI surface reference
 
 ```
-browser-cli list [<site>]                        list workflows (filter: substring, '.' ↔ '~')
+browser-cli list [<site>]                        list workflows (case-insensitive substring filter)
 browser-cli describe <name>                      show a workflow's params
 browser-cli run <name> [args]                    run a workflow once
 browser-cli config                               LLM provider setup

@@ -72,26 +72,26 @@ The `browser-cli` binary itself comes from `npm install -g @browserclijs/browser
 
 ### Folder naming convention
 
-One folder per target **domain**, using the **full domain with dots replaced by `~`**. Rationale: short aliases like `x/`, `hn/`, `google/` collide across TLDs (`example.com` vs `example.org`). The domain is the natural unique key.
+One folder per target **domain**, using the **full domain verbatim** (lowercase). Rationale: short aliases like `x/`, `hn/`, `google/` collide across TLDs (`example.com` vs `example.org`). The domain is the natural unique key.
 
 Examples (under `<workflow-root>/`, where the root is either `<git-root>/.browser-cli/workflows/` or `$(browser-cli home)/workflows/`):
 ```
-news~ycombinator~com/
+news.ycombinator.com/
 └── top.ts
-x~com/
+x.com/
 ├── profile-tweets.ts
 └── my-timeline.ts
-github~com/
+github.com/
 └── star.ts
-mail~google~com/       ← subdomains get their own folder; no collision with google~com
+mail.google.com/       ← subdomains get their own folder; no collision with google.com
 ```
 
 Invocation mirrors the folder name. Three arg forms are auto-detected (pick whichever is terser):
 
 ```bash
-browser-cli run news~ycombinator~com/top 5                              # positional (schema order)
-browser-cli run x~com/profile-tweets --username ClaudeDevs --limit 20   # named flags
-browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs"}'        # JSON (complex inputs)
+browser-cli run news.ycombinator.com/top 5                              # positional (schema order)
+browser-cli run x.com/profile-tweets --username ClaudeDevs --limit 20   # named flags
+browser-cli run x.com/profile-tweets '{"username":"ClaudeDevs"}'        # JSON (complex inputs)
 ```
 
 ## Running a workflow
@@ -108,7 +108,7 @@ browser-cli --help                            # usage
 Exit 0 on success, non-zero on script throw. Stdout is JSON (for piping); stderr is human messages (errors, prompts, preflight hints).
 
 ```bash
-browser-cli run news~ycombinator~com/top 5 | jq '.[].title'
+browser-cli run news.ycombinator.com/top 5 | jq '.[].title'
 ```
 
 Give each schema field a `.describe("...")` string — `browser-cli describe` surfaces it as the per-parameter docstring, so unfamiliar workflows become self-documenting at the CLI.
@@ -122,15 +122,15 @@ any Chrome started with `--remote-debugging-port=9222` — pass `--cdp-url`:
 
 ```bash
 # HTTP discovery URL — browser-cli resolves the websocket via /json/version
-browser-cli run news~ycombinator~com/top 5 --cdp-url http://127.0.0.1:9222
+browser-cli run news.ycombinator.com/top 5 --cdp-url http://127.0.0.1:9222
 
 # Or paste the raw websocket URL straight from .webSocketDebuggerUrl
-browser-cli run news~ycombinator~com/top 5 \
+browser-cli run news.ycombinator.com/top 5 \
   --cdp-url "ws://127.0.0.1:9222/devtools/browser/abc123"
 
 # Or persist a default for the shell
 export BROWSER_CLI_CDP_URL=http://127.0.0.1:9222
-browser-cli run news~ycombinator~com/top 5
+browser-cli run news.ycombinator.com/top 5
 ```
 
 Workflow files do NOT change — the CDP endpoint is a runner-level concern
@@ -228,14 +228,14 @@ Before any probing, walk this tree. It decides whether you even need a browser a
 
 ### 0. Check for an existing workflow first (DO THIS BEFORE ANYTHING ELSE)
 
-Before writing anything new, list what's already saved and look for a match by target domain. Pass the site as a filter — substring, case-insensitive, and `.`/`~` are interchangeable:
+Before writing anything new, list what's already saved and look for a match by target domain. Pass the site as a filter — case-insensitive substring match:
 
 ```bash
-browser-cli list <site>          # e.g. `browser-cli list hn` or `browser-cli list news.ycombinator.com`
+browser-cli list <site>          # e.g. `browser-cli list ycombinator` or `browser-cli list news.ycombinator.com`
 browser-cli list                 # omit the filter if you want the full picture
 ```
 
-Map the user's ask to a domain folder using the `.` → `~` convention (e.g. "抓 HN" → `news~ycombinator~com/`, "抓我的推特" → `x~com/`). Also skim subscriptions — shared packs may already cover the ask:
+Map the user's ask to a domain folder using the verbatim hostname (e.g. "抓 HN" → `news.ycombinator.com/`, "抓我的推特" → `x.com/`). Also skim subscriptions — shared packs may already cover the ask:
 
 ```bash
 browser-cli sub list          # if any subs are registered, inspect their workflows/ dirs too
@@ -430,7 +430,7 @@ Use the storage scope chosen earlier:
 - **Project-level** — find the git root, then write to `<git-root>/.browser-cli/workflows/<domain>/<name>.ts`.
 - **Global** — resolve the home once (`HOME=$(browser-cli home)`), then write to `$HOME/workflows/<domain>/<name>.ts`. Never expand `~/.browser-cli` yourself — `$BROWSER_CLI_HOME` may point somewhere else.
 
-Use the standard shape and the domain folder `.` → `~` convention. Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
+Use the standard shape and the domain folder convention (verbatim lowercase hostname). Paste the snippets that worked verbatim; only add types at the boundary. Make sure the first JSDoc line is the one-line description — it shows up in `browser-cli list`.
 
 ### 7. Run via `browser-cli` and verify — TWICE
 

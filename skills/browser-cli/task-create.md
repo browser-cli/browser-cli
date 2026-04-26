@@ -18,7 +18,7 @@ Mode is inferred from the presence of `itemKey` — set it for items mode; leave
 ### Step 1: ensure the workflow exists
 
 ```bash
-browser-cli list <site>          # scope by site when you know it (substring, '.' ↔ '~')
+browser-cli list <site>          # scope by site when you know it (case-insensitive substring)
 browser-cli list                 # or no filter to see everything
 ```
 
