@@ -12,7 +12,9 @@ import { readRegistry } from '../subs/registry.ts'
 import { extractDescription } from '../workflow-meta.ts'
 import { matchesSite, parseSiteArg } from './parse-site-arg.ts'
 
-type Row = { name: string; description: string; mtime: string }
+type Row = { name: string; site: string; description: string; mtime: string }
+
+const NO_SITE = '(no site)'
 
 export async function runList(argv: string[] = []): Promise<void> {
   const { site } = parseSiteArg(argv)
@@ -69,7 +71,7 @@ export async function runList(argv: string[] = []): Promise<void> {
     const files = subFiles.get(s.name)
     if (!files || files.length === 0) continue
     const rows = toRows(files, path.join(SUBS_DIR, s.name, 'workflows'))
-    printSection(`── ${s.name} ──  (subscribed · ${s.url})`, rows, s.name)
+    printSection(`── ${s.name} ──  (subscribed · ${s.url})`, rows)
   }
 }
 
@@ -77,31 +79,93 @@ function toRows(files: string[], baseDir: string): Row[] {
   return files.map((file) => {
     const abs = path.join(baseDir, file)
     const stat = fs.statSync(abs)
+    const clean = file.replace(/\.ts$/, '')
+    const slash = clean.indexOf('/')
+    const site = slash >= 0 ? clean.slice(0, slash) : NO_SITE
+    const name = slash >= 0 ? clean.slice(slash + 1) : clean
     return {
-      name: file.replace(/\.ts$/, ''),
+      name,
+      site,
       description: extractDescription(abs),
       mtime: stat.mtime.toISOString().slice(0, 10),
     }
   })
 }
 
-function printSection(title: string, rows: Row[], subPrefix?: string): void {
+function printSection(title: string, rows: Row[]): void {
+  process.stdout.write(`\n${title}\n`)
   if (rows.length === 0) {
-    process.stdout.write(`\n${title}\n  (none)\n`)
+    process.stdout.write('  (none)\n')
     return
   }
-  const display = rows.map((r) => ({
-    ...r,
-    runName: subPrefix ? `${subPrefix}/${r.name}` : r.name,
-  }))
-  const nameCol = Math.max(4, ...display.map((r) => r.runName.length))
-  const dateCol = 10
-  process.stdout.write(`\n${title}\n`)
-  process.stdout.write(
-    `${'NAME'.padEnd(nameCol)}  ${'UPDATED'.padEnd(dateCol)}  DESCRIPTION\n`,
-  )
-  process.stdout.write('-'.repeat(nameCol + dateCol + 17) + '\n')
-  for (const r of display) {
-    process.stdout.write(`${r.runName.padEnd(nameCol)}  ${r.mtime.padEnd(dateCol)}  ${r.description}\n`)
+
+  const groups = new Map<string, Row[]>()
+  for (const r of rows) {
+    const list = groups.get(r.site) ?? []
+    list.push(r)
+    groups.set(r.site, list)
   }
+  const sites = Array.from(groups.keys()).sort((a, b) => {
+    if (a === NO_SITE) return 1
+    if (b === NO_SITE) return -1
+    return a.localeCompare(b)
+  })
+
+  const termWidth = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 80
+
+  for (const site of sites) {
+    const items = groups.get(site)!
+    items.sort((a, b) => a.name.localeCompare(b.name))
+    const nameCol = Math.max(4, ...items.map((r) => r.name.length))
+    const dateCol = 10
+    const fixed = nameCol + 2 + dateCol + 2
+    const descCol = Math.max(20, termWidth - fixed)
+    const indent = ' '.repeat(fixed)
+
+    process.stdout.write(`\n${site}\n`)
+    process.stdout.write(
+      `${'NAME'.padEnd(nameCol)}  ${'UPDATED'.padEnd(dateCol)}  DESCRIPTION\n`,
+    )
+    process.stdout.write('-'.repeat(Math.min(termWidth, fixed + 11)) + '\n')
+    for (const r of items) {
+      const lines = wrapText(r.description, descCol)
+      process.stdout.write(`${r.name.padEnd(nameCol)}  ${r.mtime.padEnd(dateCol)}  ${lines[0] ?? ''}\n`)
+      for (let i = 1; i < lines.length; i++) {
+        process.stdout.write(`${indent}${lines[i]}\n`)
+      }
+    }
+  }
+}
+
+function wrapText(text: string, width: number): string[] {
+  if (!text) return ['']
+  const words = text.split(/\s+/).filter(Boolean)
+  if (words.length === 0) return ['']
+  const lines: string[] = []
+  let current = ''
+  for (const word of words) {
+    if (word.length > width) {
+      if (current) {
+        lines.push(current)
+        current = ''
+      }
+      let w = word
+      while (w.length > width) {
+        lines.push(w.slice(0, width))
+        w = w.slice(width)
+      }
+      current = w
+      continue
+    }
+    if (!current) {
+      current = word
+    } else if (current.length + 1 + word.length <= width) {
+      current += ` ${word}`
+    } else {
+      lines.push(current)
+      current = word
+    }
+  }
+  if (current) lines.push(current)
+  return lines
 }

@@ -1,5 +1,5 @@
 export function normalizeSite(s: string): string {
-  return s.toLowerCase().replace(/\./g, '~')
+  return s.toLowerCase()
 }
 
 export function matchesSite(candidate: string, pattern: string | undefined): boolean {

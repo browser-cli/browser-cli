@@ -31,13 +31,13 @@ const USAGE = `Usage:
   browser-cli --help                                    Show this message
 
 \`list\` / \`task list\` accept an optional site filter — case-insensitive substring
-match where '.' and '~' are interchangeable. \`list hn\`, \`list ycombinator\`, and
-\`list news.ycombinator.com\` all match workflows under news~ycombinator~com/.
+match. \`list ycombinator\` and \`list news.ycombinator.com\` both match workflows
+under news.ycombinator.com/.
 
 Args for \`run\` accept three forms (auto-detected):
-  - Positional in schema order:   browser-cli run x~com/profile-tweets ClaudeDevs 20
-  - Named flags:                  browser-cli run x~com/profile-tweets --username ClaudeDevs --limit 20
-  - JSON object (back-compat):    browser-cli run x~com/profile-tweets '{"username":"ClaudeDevs","limit":20}'
+  - Positional in schema order:   browser-cli run x.com/profile-tweets ClaudeDevs 20
+  - Named flags:                  browser-cli run x.com/profile-tweets --username ClaudeDevs --limit 20
+  - JSON object (back-compat):    browser-cli run x.com/profile-tweets '{"username":"ClaudeDevs","limit":20}'
 Use \`browser-cli run <name> --help\` to print parameters without executing.
 
 Workflow files live in <git-root>/.browser-cli/workflows/<name>.ts (project)
