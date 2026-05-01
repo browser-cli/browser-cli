@@ -3,7 +3,7 @@ import { Stagehand as StagehandCtor } from '@browserbasehq/stagehand'
 import type { z } from 'zod'
 import { makeClientId, makeStagehandConfig } from './stagehand-config.ts'
 import { CACHE_DIR } from './paths.ts'
-import { registerSession, safeClose, unregisterSession } from './shutdown.ts'
+import { closeWorkflowPages, registerSession, safeClose, unregisterSession } from './shutdown.ts'
 import {
   captureResponses as rawCaptureResponses,
   waitForJsonResponse as rawWaitForJsonResponse,
@@ -101,13 +101,13 @@ export async function withBrowser<T>(
     const sh = new StagehandCtor(await makeStagehandConfig(CACHE_DIR, { cdpUrl: opts.cdpUrl }))
     await sh.init()
     const sessionId = makeClientId()
-    registerSession({ id: sessionId, stagehand: sh })
     const preExisting = new Set<V3Page>()
     const preExistingUrls = new Map<V3Page, string>()
     for (const p of sh.context.pages()) {
       preExisting.add(p)
       preExistingUrls.set(p, p.url())
     }
+    registerSession({ id: sessionId, stagehand: sh, preExisting, preExistingUrls })
     session.current = { stagehand: sh, sessionId, preExisting, preExistingUrls }
     return sh
   }
@@ -118,6 +118,7 @@ export async function withBrowser<T>(
     async newPage() {
       const sh = await ensureStagehand()
       const v3Page = await sh.context.newPage()
+      await enableFocusEmulation(v3Page)
       return wrapPage(v3Page, sh)
     },
     onCleanup(fn) {
@@ -157,19 +158,42 @@ export async function withBrowser<T>(
 
     // 2. Close pages opened by the workflow + run two-phase Stagehand shutdown,
     //    but only if the workflow ever booted a browser. Layer 1 paths skip both.
+    //    The same close-pages helper runs on the SIGINT path in shutdownAndExit
+    //    so long-running workflows get the same cleanup when they exit via signal.
     const s = session.current
     if (s) {
-      for (const v3Page of s.stagehand.context.pages()) {
-        const wasPre = s.preExisting.has(v3Page)
-        const wasBlank = s.preExistingUrls.get(v3Page) === 'about:blank'
-        const stillBlank = v3Page.url() === 'about:blank'
-        if (!wasPre || (wasBlank && stillBlank)) {
-          await v3Page.close().catch(() => {})
-        }
-      }
-      unregisterSession({ id: s.sessionId, stagehand: s.stagehand })
+      await closeWorkflowPages(s).catch(() => {})
+      unregisterSession({
+        id: s.sessionId,
+        stagehand: s.stagehand,
+        preExisting: s.preExisting,
+        preExistingUrls: s.preExistingUrls,
+      })
       await safeClose(s.stagehand).catch(() => {})
     }
+  }
+}
+
+// Tell Chrome to render this CDP-attached target as if it had focus, even when
+// it isn't the OS-foreground tab. Without this, Chrome freezes the renderer of
+// any tab that isn't the focused one — visibilityState=hidden, requestAnimationFrame
+// is paused, IntersectionObserver callbacks never fire, and window.scrollBy
+// doesn't actually scroll. Pages that use virtual lists (xhs, twitter, most
+// modern feeds) then fail to mount items the script is trying to interact with;
+// the only way to unstick them is for the user to physically click the tab,
+// which defeats the point of running automation in the background.
+//
+// Emulation.setFocusEmulationEnabled flips visibilityState back to 'visible'
+// and unfreezes rAF / IO without stealing OS focus from whatever the user is
+// actually doing. Best-effort: wrapped in try/catch so an unsupported runtime
+// (e.g., older Chromium) doesn't break workflows that don't need it.
+async function enableFocusEmulation(v3Page: V3Page): Promise<void> {
+  try {
+    await v3Page.sendCDP('Emulation.setFocusEmulationEnabled', { enabled: true })
+  } catch (err) {
+    process.stderr.write(
+      `browser-cli: focus emulation setup failed (non-fatal): ${(err as Error).message}\n`,
+    )
   }
 }
 

@@ -1,6 +1,17 @@
 import type { Stagehand } from '@browserbasehq/stagehand'
 
-type ActiveSession = { id: string; stagehand: Stagehand }
+type V3Page = Awaited<ReturnType<Stagehand['context']['newPage']>>
+
+export type ActiveSession = {
+  id: string
+  stagehand: Stagehand
+  // Snapshot of pages that existed at session-init time, so we can avoid
+  // closing tabs that belong to the user (or to other workflows running in
+  // the same Chrome). Each /cdp/<clientId> connection sees its own context,
+  // so this set only contains pages this client could see at startup.
+  preExisting: Set<V3Page>
+  preExistingUrls: Map<V3Page, string>
+}
 
 const active = new Set<ActiveSession>()
 let handlersInstalled = false
@@ -12,6 +23,44 @@ export function registerSession(session: ActiveSession): void {
 
 export function unregisterSession(session: ActiveSession): void {
   active.delete(session)
+}
+
+/**
+ * Close every page this session opened (i.e. every page in the session's
+ * context that is NOT in the preExisting snapshot). Also closes pre-existing
+ * blanks that the workflow used and left blank, since those are effectively
+ * disposable.
+ *
+ * Used by both the normal-exit `withBrowser` finally AND the SIGINT-path
+ * `shutdownAndExit`, so long-running workflows (HTTP servers etc.) get the
+ * same tab cleanup as one-shot workflows when they exit via signal.
+ *
+ * Defensive against an already-closed stagehand: if `context.pages()` or
+ * `page.url()` throws, we simply skip — the underlying CDP target is gone,
+ * which is exactly what we wanted.
+ */
+export async function closeWorkflowPages(
+  s: Pick<ActiveSession, 'stagehand' | 'preExisting' | 'preExistingUrls'>,
+): Promise<void> {
+  let pages: V3Page[]
+  try {
+    pages = s.stagehand.context.pages()
+  } catch {
+    return
+  }
+  for (const v3Page of pages) {
+    const wasPre = s.preExisting.has(v3Page)
+    const wasBlank = s.preExistingUrls.get(v3Page) === 'about:blank'
+    let stillBlank = false
+    try {
+      stillBlank = v3Page.url() === 'about:blank'
+    } catch {
+      continue
+    }
+    if (!wasPre || (wasBlank && stillBlank)) {
+      await v3Page.close().catch(() => {})
+    }
+  }
 }
 
 type SafeCloseOpts = { softMs?: number; hardMs?: number }
@@ -107,12 +156,20 @@ async function shutdownAndExit(code: number, reason: string): Promise<void> {
     process.stderr.write(`shutdown: ${reason}; closing ${active.size} session(s)\n`)
   }
 
-  const closes = Array.from(active).map((s) => safeClose(s.stagehand).catch(() => {}))
+  // Per-session: close the workflow's pages first so the tabs go away in
+  // the user's Chrome, THEN safeClose the CDP session. safeClose alone only
+  // detaches CDP — without the page-close step, long-running workflows that
+  // exit via SIGINT (e.g. HTTP-server workflows) leave their tab open.
+  const closes = Array.from(active).map(async (s) => {
+    await closeWorkflowPages(s).catch(() => {})
+    await safeClose(s.stagehand).catch(() => {})
+  })
 
-  // Upper bound: softMs(3s) + hardMs(2s) + small slack. If a session's
-  // safeClose hangs past this despite both phases, exit anyway — the OS
-  // will reap the WebSocket when the process dies.
-  await raceTimeout(Promise.all(closes).then(() => {}), 6000)
+  // Upper bound: page-close timeout (~2s/page realistically) + safeClose
+  // softMs(3s) + hardMs(2s) + small slack. If a session hangs past this
+  // despite all phases, exit anyway — the OS will reap the WebSocket when
+  // the process dies.
+  await raceTimeout(Promise.all(closes).then(() => {}), 8000)
 
   active.clear()
   process.exit(code)

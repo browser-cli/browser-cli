@@ -76,6 +76,26 @@ test('Page surface — wrapPage exposes exactly the allow-listed keys (runtime)'
   }
 })
 
+test('newPage() enables focus emulation by default', () => {
+  // Without Emulation.setFocusEmulationEnabled, CDP-attached Chrome freezes
+  // the renderer of every non-foreground tab — virtual lists, rAF, IO and
+  // even window.scrollBy stop working. This default keeps backgrounded
+  // workflows usable; if it ever gets removed, every site with a virtual
+  // list breaks the moment the user switches tabs. Lock it in.
+  const src = fs.readFileSync(BROWSER_SRC, 'utf8')
+  assert.ok(
+    /Emulation\.setFocusEmulationEnabled.*enabled:\s*true/s.test(src),
+    'newPage() must enable focus emulation via Emulation.setFocusEmulationEnabled',
+  )
+  // Make sure the call isn't dead code: it has to be invoked from newPage().
+  const newPageBlock = src.match(/async newPage\s*\(\)\s*\{([\s\S]*?)\n {4}\}/)
+  assert.ok(newPageBlock, 'could not find newPage() block')
+  assert.ok(
+    /enableFocusEmulation\s*\(/.test(newPageBlock[1]),
+    'newPage() must call enableFocusEmulation() on the freshly created page',
+  )
+})
+
 test('unsafe() escape hatch is the ONLY place that hands back v3Page', () => {
   const src = fs.readFileSync(BROWSER_SRC, 'utf8')
   const lines = src.split('\n')

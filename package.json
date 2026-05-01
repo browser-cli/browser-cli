@@ -31,8 +31,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/**/*.test.ts",
     "postinstall": "node dist/postinstall.js 2>/dev/null || true",
-    "link": "npm run build && pnpm link --global && mkdir -p \"$HOME/.claude/skills\" \"$HOME/.codex/skills\" \"$HOME/.config/opencode/skills\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.claude/skills/browser-cli\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.codex/skills/browser-cli\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.config/opencode/skills/browser-cli\" && echo \"linked browser-cli bin + Claude/Codex/OpenCode skills → $PWD\"",
-    "unlink": "pnpm unlink --global 2>/dev/null; rm -f \"$HOME/.claude/skills/browser-cli\" \"$HOME/.codex/skills/browser-cli\" \"$HOME/.config/opencode/skills/browser-cli\"; echo \"unlinked browser-cli bin + Claude/Codex/OpenCode skills\""
+    "link": "npm run build && pnpm link --global && mkdir -p \"$HOME/.claude/skills\" \"$HOME/.agents/skills\" \"$HOME/.config/opencode/skills\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.claude/skills/browser-cli\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.agents/skills/browser-cli\" && ln -sfn \"$PWD/skills/browser-cli\" \"$HOME/.config/opencode/skills/browser-cli\" && echo \"linked browser-cli bin + Claude/Codex/OpenCode skills → $PWD\"",
+    "unlink": "pnpm unlink --global 2>/dev/null; rm -f \"$HOME/.claude/skills/browser-cli\" \"$HOME/.agents/skills/browser-cli\" \"$HOME/.codex/skills/browser-cli\" \"$HOME/.config/opencode/skills/browser-cli\"; echo \"unlinked browser-cli bin + Claude/Codex/OpenCode skills\""
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.103",
