@@ -46,6 +46,25 @@ CREATE TABLE IF NOT EXISTS snapshots (
   payload_hash TEXT NOT NULL,
   updated_at   INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+  key            TEXT PRIMARY KEY,
+  tokens         REAL NOT NULL,
+  last_refill_ms INTEGER NOT NULL,
+  rps            REAL NOT NULL,
+  burst          REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS concurrency_holders (
+  key           TEXT NOT NULL,
+  holder_token  TEXT NOT NULL,
+  pid           INTEGER NOT NULL,
+  hostname      TEXT NOT NULL,
+  acquired_at   INTEGER NOT NULL,
+  PRIMARY KEY (key, holder_token)
+);
+
+CREATE INDEX IF NOT EXISTS concurrency_holders_key ON concurrency_holders(key);
 `
 
 export function getDb(): Database.Database {

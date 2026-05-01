@@ -67,7 +67,20 @@ Tasks wrap a workflow with `{ schedule, args, itemKey, output, notify }`. Suppor
 
 Channels are named apprise URLs stored in sqlite. Once saved, refer to them by name from workflows (`notify('tg-me', ...)`) or tasks (`notify: { channels: ['tg-me'] }`).
 
-## 4. Managing subscriptions (shared git repos of workflows/tasks)
+## 4. Customizing rate limits / concurrency
+
+**Read:** `./rate-limit-customize.md`
+
+**Triggers:**
+- "raise / change / modify rate limit", "customize throttle"
+- "改限流" / "修改限流" / "调高限流" / "定制限流"
+- "allow more parallel runs" / "raise concurrency" / "run multiple instances of this workflow"
+- "允许多个同时跑" / "提高并发" / "去掉并发限制"
+- The user pastes one of the framework's `[browser-cli] ... throttled to ...` hints and asks to fix it
+
+The framework auto-throttles `page.fetch` to 1 qps per host and runs each workflow at concurrency 1 by default. This sub-flow is for the rare case the user explicitly wants different values.
+
+## 5. Managing subscriptions (shared git repos of workflows/tasks)
 
 **Read:** `./sub-manage.md`
 

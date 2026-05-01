@@ -14,10 +14,15 @@ import {
   resolveWorkflowPath,
 } from './paths.ts'
 import { loadTs } from './ts-loader.ts'
+import { buildRateLimiter, type RateLimits } from './store/rate-limit.ts'
+import { acquireSlot } from './store/concurrency.ts'
 
 export type WorkflowModule<S extends ZodSchema = ZodSchema> = {
   schema: S
   run: (browser: Browser, args: z.infer<S>) => Promise<unknown>
+  rateLimits?: RateLimits
+  /** Max concurrent runs of this workflow allowed across all processes. */
+  concurrency?: number
 }
 
 function unwrapModule(mod: Record<string, unknown>): Record<string, unknown> {
@@ -37,6 +42,14 @@ function assertWorkflowModule(rawMod: Record<string, unknown>, name: string): Wo
   }
   if (typeof mod.run !== 'function') {
     throw new Error(`Workflow "${name}" is missing an async \`run(browser, args)\` export.`)
+  }
+  if (mod.concurrency !== undefined) {
+    const c = mod.concurrency as unknown
+    if (typeof c !== 'number' || !Number.isInteger(c) || c < 0) {
+      throw new Error(
+        `Workflow "${name}" \`concurrency\` must be a non-negative integer (got ${String(c)}). Use 0 to opt out of the default single-instance cap.`,
+      )
+    }
   }
   return mod as unknown as WorkflowModule
 }
@@ -87,7 +100,15 @@ export async function runWorkflow(
   rawArgs: unknown = {},
   options: { cdpUrl?: string; preloaded?: WorkflowModule } = {},
 ): Promise<unknown> {
-  const mod = options.preloaded ?? (await loadWorkflow(name)).mod
+  let mod: WorkflowModule
+  let resolvedPath: string | null = null
+  if (options.preloaded) {
+    mod = options.preloaded
+  } else {
+    const loaded = await loadWorkflow(name)
+    mod = loaded.mod
+    resolvedPath = loaded.path
+  }
 
   let parsed: unknown
   try {
@@ -102,5 +123,51 @@ export async function runWorkflow(
     throw err
   }
 
-  return await withBrowser({ cdpUrl: options.cdpUrl }, (browser) => mod.run(browser, parsed))
+  const rateLimiter = buildRateLimiter(mod.rateLimits)
+
+  // Use the resolved file path as the slot key when available so two ways to
+  // invoke the same workflow (project vs global, namespaced vs bare) share the
+  // same concurrency budget. Fall back to the user-supplied name for preloaded
+  // SDK callers that bypass loadWorkflow.
+  const slotKey = `workflow:${resolvedPath ?? name}`
+
+  // Default behavior: every workflow is single-instance (concurrency=1) unless
+  // explicitly opted out with `export const concurrency = 0` (unlimited) or
+  // raised to a higher number. Most personal automation scripts want this —
+  // running the same workflow twice in parallel is usually a mistake.
+  const declared = mod.concurrency
+  const isDefaultConcurrency = declared === undefined
+  const cap = declared ?? 1
+  if (typeof cap !== 'number' || !Number.isInteger(cap) || cap < 0) {
+    throw new Error(
+      `Workflow "${name}" \`concurrency\` must be a non-negative integer (got ${String(declared)}). Use 0 to opt out of the default single-instance cap.`,
+    )
+  }
+
+  const slotStart = Date.now()
+  const slot = cap > 0 ? await acquireSlot(slotKey, cap) : null
+  const slotWaited = Date.now() - slotStart
+  if (slot && slotWaited > 100 && isDefaultConcurrency) {
+    emitConcurrencyHint(name)
+  }
+
+  try {
+    return await withBrowser({ cdpUrl: options.cdpUrl, rateLimiter }, (browser) =>
+      mod.run(browser, parsed),
+    )
+  } finally {
+    slot?.release()
+  }
+}
+
+const concurrencyHintEmitted = new Set<string>()
+function emitConcurrencyHint(name: string): void {
+  if (concurrencyHintEmitted.has(name)) return
+  concurrencyHintEmitted.add(name)
+  process.stderr.write(
+    `[browser-cli] workflow "${name}" defaults to single-instance (concurrency=1). Another run held the slot.\n` +
+      `   → To allow more parallel runs, ask your AI: "raise concurrency for this workflow"\n` +
+      `   → Use \`export const concurrency = 0\` to opt out entirely.\n` +
+      `   → Docs: https://browser-cli.zerith.app/concepts/rate-limit/\n`,
+  )
 }

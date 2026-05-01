@@ -51,6 +51,11 @@ export default defineConfig({
               translations: { 'zh-CN': 'Task' },
               link: '/concepts/task/',
             },
+            {
+              label: 'Rate limit & concurrency',
+              translations: { 'zh-CN': '限速与并发' },
+              link: '/concepts/rate-limit/',
+            },
           ],
         },
         {

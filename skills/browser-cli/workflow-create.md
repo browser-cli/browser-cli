@@ -190,6 +190,17 @@ workflow.** If you need a teardown hook (e.g. you opened a download stream),
 register it via `browser.onCleanup(fn)` so the runner can sequence it before
 the CDP shutdown.
 
+### Built-in throttling — defaults you should know about
+
+The framework applies safe defaults to every workflow without any declaration:
+
+- **`page.fetch`** is throttled to **1 qps per host** (burst 1).
+- **The workflow itself** runs at **concurrency 1** — a 2nd parallel `browser-cli run` of the same workflow blocks until the 1st finishes.
+
+Both defaults are designed for personal automation; most workflows never need to override them. If a wait actually happens, the framework prints a one-shot stderr hint per process pointing at how to customize.
+
+When the user explicitly wants different values — they say "raise rate limit", "改限流", "allow N parallel runs", "提高并发", or pastes one of the framework's throttle hints — load `./rate-limit-customize.md` and follow it. Don't pre-emptively add `rateLimits` or `concurrency` exports; defaults are usually right.
+
 ## Decision: which execution path
 
 Before any probing, walk this tree. It decides whether you even need a browser at all.
@@ -524,7 +535,7 @@ was never initialized (Path A / Layer 1 workflows that never called
 to clean up.
 
 ### Concurrent runs
-Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process, so `browser-cli run ... & browser-cli run ... & wait` works. Two concurrent workflows that mutate the **same** page or cookies can still race — one workflow per tab is the safe pattern.
+Playwriter relay rejects duplicate clientIds with code 4004. The runner already appends a unique `bc-<pid>-<ts>` per process. By default each workflow is single-instance (concurrency=1), so a 2nd `browser-cli run` of the same workflow blocks until the 1st finishes — no relay collisions, no shared-page races. To allow more parallel runs, see `./rate-limit-customize.md`.
 
 ### Stagehand URL drift (minor)
 `page.act()` with `selfHeal: true` sometimes writes the healed entry to a different cache key (URL normalization differs between read and write paths). Functionally fine — self-heal always produces a successful click — but stale cache entries may accumulate. If `$(browser-cli home)/.cache/` grows weird, delete files matching the affected instruction and let them regenerate.
