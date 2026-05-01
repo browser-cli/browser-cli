@@ -11,6 +11,7 @@ import {
   type Matcher,
 } from './helpers/network.ts'
 import { extractFromJson as rawExtractFromJson } from './helpers/extract-from-json.ts'
+import { acquireToken, ensureBucket, RateLimiter, buildRateLimiter, type RateLimits } from './store/rate-limit.ts'
 
 type V3Page = Awaited<ReturnType<Stagehand['context']['newPage']>>
 
@@ -74,17 +75,30 @@ export interface Page {
 export interface Browser {
   newPage(): Promise<Page>
   onCleanup(fn: () => void | Promise<void>): void
+  /**
+   * Run `fn` under a named rate-limit bucket. The bucket name must be declared
+   * in the workflow's `rateLimits` export (or passed via `withBrowser` opts in
+   * SDK use). Cross-process safe — multiple workflow runs targeting the same
+   * bucket key share the same SQLite-backed token bucket.
+   */
+  rateLimit<T>(name: string, fn: () => Promise<T>): Promise<T>
   unsafe(): { stagehand: Stagehand }
 }
 
 export type WithBrowserOpts = {
   cdpUrl?: string
+  /** Pre-built limiter (used by the workflow runner). */
+  rateLimiter?: RateLimiter
+  /** Convenience for SDK callers — equivalent to passing a limiter built from these declarations. */
+  rateLimits?: RateLimits
 }
 
 export async function withBrowser<T>(
   opts: WithBrowserOpts,
   fn: (browser: Browser) => Promise<T>,
 ): Promise<T> {
+  const rateLimiter = opts.rateLimiter ?? buildRateLimiter(opts.rateLimits)
+
   // Lazy Stagehand init: Layer 1 workflows (public API, no browser needed)
   // never call browser.newPage(), so we never pay the Chrome attach cost
   // and never register a CDP session that could leak.
@@ -119,10 +133,21 @@ export async function withBrowser<T>(
       const sh = await ensureStagehand()
       const v3Page = await sh.context.newPage()
       await enableFocusEmulation(v3Page)
-      return wrapPage(v3Page, sh)
+      return wrapPage(v3Page, sh, rateLimiter)
     },
     onCleanup(fn) {
       cleanupFns.push(fn)
+    },
+    async rateLimit<R>(name: string, fn: () => Promise<R>): Promise<R> {
+      const spec = rateLimiter.getByName(name)
+      if (!spec) {
+        throw new Error(
+          `browser.rateLimit("${name}"): no bucket with that name was declared. ` +
+            `Add it to your workflow's \`rateLimits\` export (or pass it in \`withBrowser({ rateLimits })\`).`,
+        )
+      }
+      await acquireToken(name)
+      return await fn()
     },
     unsafe() {
       throw new Error(
@@ -197,7 +222,50 @@ async function enableFocusEmulation(v3Page: V3Page): Promise<void> {
   }
 }
 
-function wrapPage(v3Page: V3Page, stagehand: Stagehand): Page {
+// Tracks default-throttle hint emissions across the process so we don't spam.
+const defaultFetchHintEmitted = new Set<string>()
+const defaultFetchBucketRegistered = new Set<string>()
+
+/**
+ * Acquire a token for `page.fetch(url)`. If the workflow declared an explicit
+ * `rateLimits` entry that matches the URL, use it. Otherwise fall back to a
+ * per-host default of 1 qps / burst 1 — safe for unattended personal scripts,
+ * cheap to override per workflow.
+ */
+async function acquireFetchToken(rawUrl: string, rateLimiter: RateLimiter): Promise<void> {
+  const explicit = rateLimiter.matchUrl(rawUrl)
+  if (explicit) {
+    await acquireToken(explicit.key)
+    return
+  }
+
+  let host: string
+  try {
+    host = new URL(rawUrl).host
+  } catch {
+    return // invalid URL — let the page-side fetch report the error
+  }
+
+  const key = `default:${host}`
+  if (!defaultFetchBucketRegistered.has(key)) {
+    defaultFetchBucketRegistered.add(key)
+    ensureBucket(key, { rps: 1, burst: 1, manual: false })
+  }
+
+  const start = Date.now()
+  await acquireToken(key)
+  const waited = Date.now() - start
+  if (waited > 100 && !defaultFetchHintEmitted.has(host)) {
+    defaultFetchHintEmitted.add(host)
+    process.stderr.write(
+      `[browser-cli] page.fetch to ${host} is throttled to 1 qps (default).\n` +
+        `   → To customize: tell your AI "raise rate limit for ${host} in this workflow"\n` +
+        `   → Docs: https://browser-cli.zerith.app/concepts/rate-limit/\n`,
+    )
+  }
+}
+
+function wrapPage(v3Page: V3Page, stagehand: Stagehand, rateLimiter: RateLimiter): Page {
   let unsafeWarned = false
 
   const activate = () => stagehand.context.setActivePage(v3Page)
@@ -240,6 +308,7 @@ function wrapPage(v3Page: V3Page, stagehand: Stagehand): Page {
     },
 
     async fetch<T>(url: string, init?: FetchInit): Promise<T> {
+      await acquireFetchToken(url, rateLimiter)
       const merged: FetchInit = { credentials: 'include', ...init }
       return (await v3Page.evaluate(
         async ([u, i]: [string, FetchInit]) => {
