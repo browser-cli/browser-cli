@@ -5,6 +5,7 @@ import {
   CHROME_EXT_URL,
   RELAY_HEALTH_URL,
   detectPlaywriterVersion,
+  isNoBrowserMode,
   isRelayReachable,
 } from '../preflight.ts'
 import { isAppriseAvailable } from '../sinks/apprise.ts'
@@ -74,6 +75,9 @@ function checkNode(): Check {
 }
 
 async function checkPlaywriter(): Promise<Check> {
+  if (isNoBrowserMode()) {
+    return { label: 'ok', line: 'playwriter — skipped (BROWSER_CLI_NO_BROWSER=1)' }
+  }
   const version = await detectPlaywriterVersion()
   if (version) return { label: 'ok', line: `playwriter ${version}` }
   return {
@@ -84,6 +88,9 @@ async function checkPlaywriter(): Promise<Check> {
 }
 
 async function checkRelay(): Promise<Check> {
+  if (isNoBrowserMode()) {
+    return { label: 'ok', line: 'relay — skipped (BROWSER_CLI_NO_BROWSER=1)' }
+  }
   const up = await isRelayReachable()
   if (up) return { label: 'ok', line: `relay ${RELAY_HEALTH_URL}` }
   return {

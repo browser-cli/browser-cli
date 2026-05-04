@@ -5,7 +5,23 @@ import { PLAYWRITER_CDP_HOST } from './stagehand-config.ts'
 export const RELAY_HEALTH_URL = `http://${PLAYWRITER_CDP_HOST}/`
 export const CHROME_EXT_URL = 'https://playwriter.dev/'
 
+// Hosts without a desktop Chrome (VPS, CI, container) opt out of the
+// playwriter/relay check by setting BROWSER_CLI_NO_BROWSER=1. Workflows
+// that never call browser.newPage() then run end-to-end via `browser-cli
+// run` or `browser-cli task run`; ones that do will fail at Stagehand init.
+export function isNoBrowserMode(): boolean {
+  const v = process.env.BROWSER_CLI_NO_BROWSER
+  return v === '1' || v === 'true' || v === 'yes'
+}
+
 export async function ensurePlaywriter(): Promise<void> {
+  if (isNoBrowserMode()) {
+    process.stderr.write(
+      'BROWSER_CLI_NO_BROWSER=1 — skipping playwriter check. ' +
+        'Workflows that call browser.newPage() will fail at runtime.\n',
+    )
+    return
+  }
   if (await isRelayReachable()) return
 
   const version = await detectPlaywriterVersion()

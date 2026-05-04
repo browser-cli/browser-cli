@@ -59,6 +59,7 @@ Environment (resolved in priority order):
   BROWSER_CLI_CDP_URL                      Default CDP endpoint when --cdp-url not given
   BROWSER_CLI_HOME                         Override the default ~/.browser-cli location
   BROWSER_CLI_DEBUG=1                      Print full stack traces on error
+  BROWSER_CLI_NO_BROWSER=1                 Skip playwriter/relay preflight (VPS/CI/headless hosts)
 `
 
 async function main(): Promise<void> {
