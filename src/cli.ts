@@ -11,6 +11,7 @@ import { runSync } from './commands/sync.ts'
 import { runSub } from './commands/sub.ts'
 import { runHome, runSubsHome } from './commands/home.ts'
 import { runDoctor } from './commands/doctor.ts'
+import { loadDotEnv } from './paths.ts'
 import { checkForUpdate } from './versionCheck.ts'
 
 const USAGE = `Usage:
@@ -64,6 +65,10 @@ Environment (resolved in priority order):
 
 async function main(): Promise<void> {
   installShutdownHandlers()
+  // Load ~/.browser-cli/.env up front so every subcommand — including
+  // preflight checks that run before the workflow loader — sees env vars
+  // like BROWSER_CLI_NO_BROWSER. Existing shell vars still take precedence.
+  loadDotEnv()
   const argv = process.argv.slice(2)
   const [cmd, ...rest] = argv
 
